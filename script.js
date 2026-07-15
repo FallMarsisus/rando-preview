@@ -76,10 +76,8 @@ map.on('click', async (e) => {
 
 // --- LOGIQUE API (VIA PROXY CLOUDFLARE) ---
 async function calculerItineraire(start, end) {
-    // ⚠️ REMPLACE CETTE URL PAR CELLE DE TON WORKER CLOUDFLARE ⚠️
     const WORKER_URL = 'https://rando.simonlncln.workers.dev';
 
-    // On envoie la requête à ton proxy, en ajoutant le profil à la fin de l'URL
     const urlRando = `${WORKER_URL}/${currentProfile}`;
     const urlMeteo = `https://api.open-meteo.com/v1/forecast?latitude=${start[1]}&longitude=${start[0]}&current_weather=true`;
 
@@ -87,7 +85,6 @@ async function calculerItineraire(start, end) {
         const [resRando, resMeteo] = await Promise.all([
             fetch(urlRando, {
                 method: 'POST', 
-                // PLUS BESOIN DU HEADER "Authorization" ICI !
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     coordinates: [start, end], 
@@ -98,16 +95,32 @@ async function calculerItineraire(start, end) {
             fetch(urlMeteo)
         ]);
 
+        // 1. SÉCURITÉ MÉTÉO : Si l'API météo plante (ex: 503), on met 20°C par défaut
+        let temperature = 20; 
+        if (resMeteo.ok) {
+            const dataMeteo = await resMeteo.json();
+            // Le petit "?" empêche le crash si current_weather est absent
+            temperature = dataMeteo.current_weather?.temperature || 20; 
+        } else {
+            console.warn("⚠️ API Météo indisponible, utilisation de 20°C par défaut.");
+        }
+
+        // 2. SÉCURITÉ RANDO : Si le Worker ou OpenRouteService renvoie une erreur 503
+        if (!resRando.ok) {
+            instructionText.innerText = `Le serveur de calcul est surchargé (Erreur ${resRando.status}). Réessaie dans 10 secondes.`;
+            return;
+        }
+
         const dataRando = await resRando.json();
-        const dataMeteo = await resMeteo.json();
         
+        // 3. Vérification des erreurs de routage (ex: points trop éloignés)
         if (dataRando.error) {
             instructionText.innerText = `Erreur : ${dataRando.error.message || "Erreur de routage"}`;
             return;
         }
 
+        // Si tout est bon, on affiche !
         const routeGeoJSON = dataRando.features[0];
-        const temperature = dataMeteo.current_weather.temperature; 
         
         afficherTracerSurCarte(routeGeoJSON);
         calculerEtAfficherStats(routeGeoJSON, temperature);
@@ -118,12 +131,12 @@ async function calculerItineraire(start, end) {
         fab.classList.add('hidden');
 
     } catch (error) {
-        console.error(error);
-        instructionText.innerText = "Erreur réseau avec le proxy Serverless.";
+        console.error("Crash complet :", error);
+        instructionText.innerText = "Erreur réseau. Impossible de joindre les serveurs.";
     }
 }
 
-// --- AFFICHAGE TRACÉ ---
+
 function afficherTracerSurCarte(geojson) {
     if (map.getSource('route')) {
         map.getSource('route').setData(geojson);
