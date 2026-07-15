@@ -1,8 +1,7 @@
-// --- CONFIGURATION ---
-// Plus besoin de clé API avec BRouter !
+
 let waypoints = [];
 let markers = [];
-let currentProfile = 'foot-hiking'; // Mode par défaut
+let currentProfile = 'foot-hiking'; 
 
 // --- INITIALISATION DE LA CARTE ---
 const map = new maplibregl.Map({
@@ -21,7 +20,7 @@ const map = new maplibregl.Map({
         ],
         terrain: { source: 'terrainSource', exaggeration: 1.5 }
     },
-    center: [6.865, 45.923], // Chamonix
+    center: [6.865, 45.923], 
     zoom: 12, pitch: 65, bearing: 15
 });
 
@@ -43,7 +42,6 @@ fab.addEventListener('click', () => {
     fab.classList.add('hidden');
 });
 
-// Sélecteurs
 document.querySelectorAll('input[name="route-mode"]').forEach(radio => {
     radio.addEventListener('change', async (e) => {
         currentProfile = e.target.value;
@@ -76,28 +74,35 @@ map.on('click', async (e) => {
     }
 });
 
-// --- LOGIQUE API BROUTER ---
+// --- LOGIQUE API (VIA PROXY CLOUDFLARE) ---
 async function calculerItineraire(start, end) {
-    // Adaptation des profils pour BRouter
-    // "trekking" privilégie la randonnée/nature, "shortest" va au plus court (route)
-    const brouterProfile = currentProfile === 'foot-hiking' ? 'trekking' : 'shortest';
-    
-    // Requête GET simple sur l'API publique de BRouter
-    const urlRando = `https://brouter.de/brouter?lonlats=${start[0]},${start[1]}|${end[0]},${end[1]}&profile=${brouterProfile}&alternativeidx=0&format=geojson`;
+    // ⚠️ REMPLACE CETTE URL PAR CELLE DE TON WORKER CLOUDFLARE ⚠️
+    const WORKER_URL = 'https://rando-proxy.ton-pseudo.workers.dev';
+
+    // On envoie la requête à ton proxy, en ajoutant le profil à la fin de l'URL
+    const urlRando = `${WORKER_URL}/${currentProfile}`;
     const urlMeteo = `https://api.open-meteo.com/v1/forecast?latitude=${start[1]}&longitude=${start[0]}&current_weather=true`;
 
     try {
         const [resRando, resMeteo] = await Promise.all([
-            fetch(urlRando), // Plus besoin de POST ni de Headers !
+            fetch(urlRando, {
+                method: 'POST', 
+                // PLUS BESOIN DU HEADER "Authorization" ICI !
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    coordinates: [start, end], 
+                    elevation: true, 
+                    extra_info: ["surface"] 
+                })
+            }),
             fetch(urlMeteo)
         ]);
 
         const dataRando = await resRando.json();
         const dataMeteo = await resMeteo.json();
         
-        // Gestion des erreurs BRouter (si aucun chemin n'est trouvé)
-        if (!dataRando.features || dataRando.features.length === 0) {
-            instructionText.innerText = `Erreur : Impossible de relier ces points.`;
+        if (dataRando.error) {
+            instructionText.innerText = `Erreur : ${dataRando.error.message || "Erreur de routage"}`;
             return;
         }
 
@@ -106,7 +111,7 @@ async function calculerItineraire(start, end) {
         
         afficherTracerSurCarte(routeGeoJSON);
         calculerEtAfficherStats(routeGeoJSON, temperature);
-        gererNomsEtSurfacesInexistants(); // Mise à jour de l'UI
+        extraireNomsEtSurfaces(routeGeoJSON); 
 
         instructions.classList.add('hidden');
         sidebar.classList.remove('hidden');
@@ -114,7 +119,7 @@ async function calculerItineraire(start, end) {
 
     } catch (error) {
         console.error(error);
-        instructionText.innerText = "Erreur réseau. Impossible de contacter le serveur.";
+        instructionText.innerText = "Erreur réseau avec le proxy Serverless.";
     }
 }
 
@@ -129,12 +134,11 @@ function afficherTracerSurCarte(geojson) {
     }
 }
 
-// --- MATHS (Adapté pour BRouter) ---
+// --- MATHS ---
 function calculerEtAfficherStats(geojson, temperature) {
     const coords = geojson.geometry.coordinates;
     let dPlus = 0, dMinus = 0;
 
-    // L'altitude (Z) est fournie dans les coordonnées BRouter
     if (coords.length > 0 && coords[0].length >= 3) {
         for (let i = 1; i < coords.length; i++) {
             const diff = (coords[i][2] || 0) - (coords[i - 1][2] || 0);
@@ -142,16 +146,12 @@ function calculerEtAfficherStats(geojson, temperature) {
         }
     }
 
-    // Extraction de la distance fournie par BRouter dans les "properties" (en mètres)
-    const trackLength = parseInt(geojson.properties['track-length'] || 0);
-    const distanceKm = trackLength / 1000;
+    const distanceKm = geojson.properties.summary.distance / 1000;
     
-    // Règle de Naismith Sportive (1h tous les 600m D+)
     const tempsHeuresDecimal = (distanceKm / 4) + (dPlus / 600);
     const heures = Math.floor(tempsHeuresDecimal);
     const minutes = Math.round((tempsHeuresDecimal - heures) * 60);
     
-    // Eau : Base de 0.35L/h + bonus
     let litresParHeure = 0.35;
     if (temperature > 20) litresParHeure += (temperature - 20) * 0.035;
 
@@ -163,15 +163,61 @@ function calculerEtAfficherStats(geojson, temperature) {
     document.getElementById('stat-temp').innerText = temperature;
 }
 
-// --- DEGRADATION GRACIEUSE DE L'UI ---
-function gererNomsEtSurfacesInexistants() {
-    // BRouter ne fournissant pas ces infos, on adapte l'interface
+// --- EXTRACTION ET GESTION DYNAMIQUE DES CARTES ---
+function extraireNomsEtSurfaces(geojson) {
+    const props = geojson.properties;
+    
+    // Conteneurs et leurs "Cards" parentes respectives
     const containerNoms = document.getElementById('trail-names');
+    const cardNoms = containerNoms.closest('.inner-card');
+    
     const containerSurfaces = document.getElementById('surfaces-container');
+    const cardSurfaces = containerSurfaces.closest('.inner-card');
+
+    // 1. Gestion des noms de sentiers
+    const nomsSentiers = new Set();
+    if (props.segments && props.segments[0].steps) {
+        props.segments[0].steps.forEach(step => { if (step.name && step.name !== '-') nomsSentiers.add(step.name); });
+    }
+
+    if (nomsSentiers.size > 0) {
+        cardNoms.style.display = 'block'; // On affiche la carte entière
+        containerNoms.innerHTML = Array.from(nomsSentiers).map(nom => `<span class="trail-chip">${nom}</span>`).join('');
+    } else {
+        cardNoms.style.display = 'none'; // On cache complètement la carte
+    }
+
+    // 2. Gestion des surfaces
+    const dictionnaireSurfaces = {
+        1: 'Goudron', 2: 'Chemin non revêtu', 3: 'Asphalte', 4: 'Béton', 
+        11: 'Gravier', 12: 'Cailloux', 13: 'Chemin de terre', 14: 'Terre battue', 
+        15: 'Herbe', 18: 'Sable', 21: 'Boue'
+    };
+
+    containerSurfaces.innerHTML = '';
     
-    containerNoms.innerHTML = `<div class="loading-text" style="color: #666; margin-top: 5px;">Les noms des sentiers ne sont pas fournis par l'API publique BRouter.</div>`;
-    
-    containerSurfaces.innerHTML = `<div class="loading-text" style="color: #666; margin-top: 5px;">Le détail de la nature du sol n'est pas fourni par l'API publique BRouter.</div>`;
+    if (props.extras && props.extras.surface) {
+        cardSurfaces.style.display = 'block'; // On affiche la carte entière
+        const totalPoints = geojson.geometry.coordinates.length; 
+        const statsSurfaces = {};
+
+        props.extras.surface.values.forEach(bloc => {
+            const nomSurface = dictionnaireSurfaces[bloc[2]] || 'Autre';
+            statsSurfaces[nomSurface] = (statsSurfaces[nomSurface] || 0) + (bloc[1] - bloc[0]);
+        });
+
+        for (const [nom, valeur] of Object.entries(statsSurfaces)) {
+            const pourcentage = Math.round((valeur / totalPoints) * 100);
+            if (pourcentage > 0) {
+                containerSurfaces.innerHTML += `
+                    <div class="surface-bar"><span>${nom}</span><span>${pourcentage}%</span></div>
+                    <div class="surface-progress-bg"><div class="surface-progress-fill" style="width: ${pourcentage}%;"></div></div>
+                `;
+            }
+        }
+    } else {
+        cardSurfaces.style.display = 'none'; // On cache complètement la carte
+    }
 }
 
 // --- RÉINITIALISATION ---
