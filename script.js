@@ -77,7 +77,7 @@ map.on('click', async (e) => {
 // --- LOGIQUE API (VIA PROXY CLOUDFLARE) ---
 async function calculerItineraire(start, end) {
     // ⚠️ REMPLACE CETTE URL PAR CELLE DE TON WORKER CLOUDFLARE ⚠️
-    const WORKER_URL = 'https://rando.simonlncln.workers.dev/';
+    const WORKER_URL = 'https://rando.simonlncln.workers.dev';
 
     // On envoie la requête à ton proxy, en ajoutant le profil à la fin de l'URL
     const urlRando = `${WORKER_URL}/${currentProfile}`;
