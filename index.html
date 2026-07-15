@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rando 3D</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div id="instructions" class="md-snackbar">
+        <span class="material-symbols-outlined">touch_app</span>
+        <span id="instruction-text">Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.</span>
+    </div>
+
+    <div id="top-controls">
+        <div class="md-segmented-control">
+            <input type="radio" name="route-mode" id="mode-direct" value="foot-walking">
+            <label for="mode-direct"><span class="material-symbols-outlined">directions_walk</span> Direct</label>
+            
+            <input type="radio" name="route-mode" id="mode-rando" value="foot-hiking" checked>
+            <label for="mode-rando"><span class="material-symbols-outlined">hiking</span> Rando</label>
+        </div>
+
+        <div class="md-switch-container">
+            <label class="md-switch">
+                <input type="checkbox" id="toggle-hiking-layer" checked>
+                <span class="md-slider"></span>
+            </label>
+            <span>Traces OSM</span>
+        </div>
+    </div>
+
+    <aside id="sidebar" class="hidden">
+        <div class="sidebar-header">
+            <h2 class="md-title">Détails de l'itinéraire</h2>
+            <button id="btn-close-sidebar" class="icon-button"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        
+        <div class="sidebar-content">
+            
+            <div class="inner-card">
+                <div class="tiles-grid">
+                    <div class="md-tile">
+                        <span class="material-symbols-outlined tile-icon">straighten</span>
+                        <div class="tile-val"><span id="stat-dist">--</span> km</div>
+                    </div>
+                    <div class="md-tile">
+                        <span class="material-symbols-outlined tile-icon">timer</span>
+                        <div class="tile-val"><span id="stat-time">--</span></div>
+                    </div>
+                    <div class="md-tile">
+                        <span class="material-symbols-outlined tile-icon" style="color: #188038;">trending_up</span>
+                        <div class="tile-val"><span id="stat-dplus">--</span> m</div>
+                    </div>
+                    <div class="md-tile">
+                        <span class="material-symbols-outlined tile-icon" style="color: #d93025;">trending_down</span>
+                        <div class="tile-val"><span id="stat-dminus">--</span> m</div>
+                    </div>
+                    <div class="md-tile">
+                        <span class="material-symbols-outlined tile-icon" style="color: #0b57d0;">water_drop</span>
+                        <div class="tile-val"><span id="stat-water">--</span> L</div>
+                    </div>
+                    <div class="md-tile">
+                        <span class="material-symbols-outlined tile-icon" style="color: #f29900;">thermostat</span>
+                        <div class="tile-val"><span id="stat-temp">--</span>°C</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="inner-card">
+                <h3 class="card-subtitle"><span class="material-symbols-outlined">landscape</span> Nature du sol</h3>
+                <div id="surfaces-container" class="card-body">
+                    <div class="loading-text">Analyse en cours...</div>
+                </div>
+            </div>
+
+            <div class="inner-card">
+                <h3 class="card-subtitle"><span class="material-symbols-outlined">signpost</span> Chemins empruntés</h3>
+                <div id="trail-names" class="trail-list card-body">
+                    <div class="loading-text">Analyse en cours...</div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="sidebar-footer">
+            <button id="btn-reset" class="md-button md-button-primary">
+                <span class="material-symbols-outlined">add_location_alt</span>
+                Nouvelle trace
+            </button>
+        </div>
+    </aside>
+
+    <button id="btn-reopen" class="md-fab hidden">
+        <span class="material-symbols-outlined">query_stats</span>
+    </button>
+
+    <script src="script.js"></script>
+</body>
+</html>
