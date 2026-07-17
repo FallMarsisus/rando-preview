@@ -4,26 +4,55 @@ let currentProfile = 'foot-hiking';
 let currentGeoJSON = null; // Stocke la dernière trace pour l'export GPX
 
 // --- INITIALISATION DE LA CARTE ---
-// On démarre avec un zoom reculé pour l'effet "carte du monde"
 const map = new maplibregl.Map({
     container: 'map',
     style: {
         version: 8,
         sources: {
-            'osm': { type: 'raster', tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '&copy; OpenStreetMap' },
-            'hiking-trails': { type: 'raster', tiles: ['https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png'], tileSize: 256, attribution: '| Randos &copy; Waymarked Trails' },
-            'terrainSource': { type: 'raster-dem', url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json', tileSize: 256 }
+            'osm': { 
+                type: 'raster', 
+                tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'], 
+                tileSize: 256, 
+                attribution: '&copy; OpenStreetMap' 
+            },
+            'hiking-trails': { 
+                type: 'raster', 
+                tiles: ['https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png'], 
+                tileSize: 256, 
+                attribution: '| Randos &copy; Waymarked Trails' 
+            },
+            // Source de dalles DEM globales (Altitudes réelles) gratuites et sans compte requis
+            'terrainSource': { 
+                type: 'raster-dem', 
+                tiles: ['https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png'], 
+                tileSize: 256,
+                maxzoom: 12
+            }
         },
         layers: [
             { id: 'osm-layer', type: 'raster', source: 'osm' },
-            { id: 'hillshade-layer', type: 'hillshade', source: 'terrainSource', paint: { 'hillshade-shadow-color': '#473b24', 'hillshade-exaggeration': 0.6 } },
+            // Le hillshade ajoute des ombres de relief réalistes sur la carte 2D/3D
+            { 
+                id: 'hillshade-layer', 
+                type: 'hillshade', 
+                source: 'terrainSource', 
+                paint: { 
+                    'hillshade-shadow-color': '#221e15', 
+                    'hillshade-exaggeration': 0.8 
+                } 
+            },
             { id: 'hiking-layer', type: 'raster', source: 'hiking-trails', minzoom: 12, paint: { 'raster-opacity': 0.4 }, layout: { 'visibility': 'visible' } }
-        ],
-        // On active le relief initialement car la case est cochée
-        terrain: { source: 'terrainSource', exaggeration: 1.5 }
+        ]
     },
-    center: [2.2137, 46.2276], // Centre de la France 
-    zoom: 5, pitch: 0, bearing: 0 // Vue au-dessus (dézoomé)
+    center: [2.2137, 46.2276], // Centre de la France au démarrage
+    zoom: 5.5, 
+    pitch: 0, // À plat au démarrage (vue globale globale)
+    bearing: 0
+});
+
+// Dès que la carte est chargée, on active le maillage 3D du terrain par défaut
+map.on('load', () => {
+    map.setTerrain({ source: 'terrainSource', exaggeration: 1.5 });
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }));
@@ -34,7 +63,7 @@ const searchInput = document.getElementById('city-search');
 const searchResults = document.getElementById('search-results');
 let searchTimeout = null;
 
-// Bouton "Ouvrir la carte globale" (Passer)
+// Bouton "Ouvrir la carte globale"
 document.getElementById('btn-skip-landing').addEventListener('click', () => {
     landingPage.classList.add('hidden');
     instructions.classList.remove('hidden');
@@ -64,11 +93,15 @@ searchInput.addEventListener('input', (e) => {
                     li.addEventListener('click', () => {
                         landingPage.classList.add('hidden');
                         instructions.classList.remove('hidden');
-                        // On zoome sur la ville et on incline si 3D est coché
+                        
+                        // Si le bouton 3D est coché, on incline fortement la caméra pour voir les montagnes en vrai relief
+                        const is3DActive = document.getElementById('toggle-3d').checked;
                         map.flyTo({
-                            center: [place.lon, place.lat],
+                            center: [parseFloat(place.lon), parseFloat(place.lat)],
                             zoom: 13,
-                            pitch: document.getElementById('toggle-3d').checked ? 65 : 0
+                            pitch: is3DActive ? 65 : 0,
+                            bearing: is3DActive ? 20 : 0,
+                            duration: 2500
                         });
                     });
                     searchResults.appendChild(li);
@@ -77,9 +110,8 @@ searchInput.addEventListener('input', (e) => {
         } catch (error) {
             console.error("Erreur de recherche", error);
         }
-    }, 500); // 500ms debounce pour ne pas spammer l'API Nominatim
+    }, 500);
 });
-
 
 // --- GESTION DE L'INTERFACE UI ---
 const sidebar = document.getElementById('sidebar');
@@ -112,14 +144,18 @@ document.getElementById('toggle-hiking-layer').addEventListener('change', (e) =>
     map.setLayoutProperty('hiking-layer', 'visibility', e.target.checked ? 'visible' : 'none');
 });
 
-// Nouveau: Toggle pour Relief 3D
+// MODIFIÉ: Gestion dynamique du VRAI Relief 3D de l'altitude
 document.getElementById('toggle-3d').addEventListener('change', (e) => {
     if (e.target.checked) {
+        // Réactive le moteur de rendu 3D du terrain
         map.setTerrain({ source: 'terrainSource', exaggeration: 1.5 });
-        map.easeTo({ pitch: 65, duration: 1000 });
+        // Incline la vue pour profiter de la perspective sur le relief
+        map.easeTo({ pitch: 65, bearing: 20, duration: 1200 });
     } else {
+        // Désactive complètement le calcul du relief (aplanit la carte à l'altitude 0)
         map.setTerrain(null);
-        map.easeTo({ pitch: 0, duration: 1000 });
+        // Remet la caméra droite (vue du dessus)
+        map.easeTo({ pitch: 0, bearing: 0, duration: 1200 });
     }
 });
 
