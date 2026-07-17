@@ -38,7 +38,7 @@ const map = new maplibregl.Map({
                 source: 'terrainSource', 
                 paint: { 
                     'hillshade-shadow-color': '#221e15', 
-                    'hillshade-exaggeration': 0.8 
+                    'hillshade-exaggeration': 0.2
                 } 
             },
             { id: 'hiking-layer', type: 'raster', source: 'hiking-trails', minzoom: 12, paint: { 'raster-opacity': 0.4 }, layout: { 'visibility': 'visible' } }
