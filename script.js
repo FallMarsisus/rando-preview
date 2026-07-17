@@ -21,13 +21,12 @@ const map = new maplibregl.Map({
                 tileSize: 256, 
                 attribution: '| Randos &copy; Waymarked Trails' 
             },
-            // NOUVEAU : Source Mondiale Open Data AWS (Mapzen Terrarium) - Sans API Key
             'terrainSource': { 
                 type: 'raster-dem', 
                 tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
-                encoding: 'terrarium', // CRUCIAL : dit à MapLibre comment lire les couleurs de l'image
+                encoding: 'terrarium', 
                 tileSize: 256,
-                maxzoom: 14 // AWS fournit une précision jusqu'au zoom 14 (environ 10m de précision)
+                maxzoom: 14 
             }
         },
         layers: [
