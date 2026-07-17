@@ -21,17 +21,17 @@ const map = new maplibregl.Map({
                 tileSize: 256, 
                 attribution: '| Randos &copy; Waymarked Trails' 
             },
-            // Source de dalles DEM globales (Altitudes réelles) gratuites et sans compte requis
+            // NOUVEAU : Source Mondiale Open Data AWS (Mapzen Terrarium) - Sans API Key
             'terrainSource': { 
                 type: 'raster-dem', 
-                tiles: ['https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png'], 
+                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
+                encoding: 'terrarium', // CRUCIAL : dit à MapLibre comment lire les couleurs de l'image
                 tileSize: 256,
-                maxzoom: 12
+                maxzoom: 14 // AWS fournit une précision jusqu'au zoom 14 (environ 10m de précision)
             }
         },
         layers: [
             { id: 'osm-layer', type: 'raster', source: 'osm' },
-            // Le hillshade ajoute des ombres de relief réalistes sur la carte 2D/3D
             { 
                 id: 'hillshade-layer', 
                 type: 'hillshade', 
@@ -44,9 +44,9 @@ const map = new maplibregl.Map({
             { id: 'hiking-layer', type: 'raster', source: 'hiking-trails', minzoom: 12, paint: { 'raster-opacity': 0.4 }, layout: { 'visibility': 'visible' } }
         ]
     },
-    center: [2.2137, 46.2276], // Centre de la France au démarrage
+    center: [2.2137, 46.2276], 
     zoom: 5.5, 
-    pitch: 0, // À plat au démarrage (vue globale globale)
+    pitch: 0,
     bearing: 0
 });
 
