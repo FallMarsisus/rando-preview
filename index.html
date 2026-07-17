@@ -15,9 +15,26 @@
 </head>
 <body>
 
+    <div id="landing-page">
+        <div class="landing-content">
+            <h1 class="landing-title">Rando 3D</h1>
+            <p class="landing-subtitle">Créez et analysez vos itinéraires de randonnée n'importe où dans le monde.</p>
+            
+            <div class="search-container">
+                <span class="material-symbols-outlined search-icon">search</span>
+                <input type="text" id="city-search" placeholder="Rechercher une ville..." autocomplete="off">
+                <ul id="search-results" class="hidden"></ul>
+            </div>
+
+            <button id="btn-skip-landing" class="md-button-text">
+                Ouvrir la carte globale
+            </button>
+        </div>
+    </div>
+
     <div id="map"></div>
 
-    <div id="instructions" class="md-snackbar">
+    <div id="instructions" class="md-snackbar hidden">
         <span class="material-symbols-outlined">touch_app</span>
         <span id="instruction-text">Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.</span>
     </div>
@@ -37,6 +54,14 @@
                 <span class="md-slider"></span>
             </label>
             <span>Traces OSM</span>
+        </div>
+
+        <div class="md-switch-container">
+            <label class="md-switch">
+                <input type="checkbox" id="toggle-3d" checked>
+                <span class="md-slider"></span>
+            </label>
+            <span>Relief 3D</span>
         </div>
     </div>
 
@@ -94,10 +119,15 @@
         </div>
 
         <div class="sidebar-footer">
-            <button id="btn-reset" class="md-button md-button-primary">
-                <span class="material-symbols-outlined">add_location_alt</span>
-                Nouvelle trace
-            </button>
+            <div class="btn-group">
+                <button id="btn-export" class="md-button md-button-secondary hidden">
+                    <span class="material-symbols-outlined">download</span> Exporter GPX
+                </button>
+                <button id="btn-reset" class="md-button md-button-primary">
+                    <span class="material-symbols-outlined">add_location_alt</span>
+                    Nouvelle trace
+                </button>
+            </div>
         </div>
     </aside>
 

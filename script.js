@@ -1,9 +1,10 @@
-
 let waypoints = [];
 let markers = [];
 let currentProfile = 'foot-hiking'; 
+let currentGeoJSON = null; // Stocke la dernière trace pour l'export GPX
 
 // --- INITIALISATION DE LA CARTE ---
+// On démarre avec un zoom reculé pour l'effet "carte du monde"
 const map = new maplibregl.Map({
     container: 'map',
     style: {
@@ -18,13 +19,67 @@ const map = new maplibregl.Map({
             { id: 'hillshade-layer', type: 'hillshade', source: 'terrainSource', paint: { 'hillshade-shadow-color': '#473b24', 'hillshade-exaggeration': 0.6 } },
             { id: 'hiking-layer', type: 'raster', source: 'hiking-trails', minzoom: 12, paint: { 'raster-opacity': 0.4 }, layout: { 'visibility': 'visible' } }
         ],
+        // On active le relief initialement car la case est cochée
         terrain: { source: 'terrainSource', exaggeration: 1.5 }
     },
-    center: [6.865, 45.923], 
-    zoom: 12, pitch: 65, bearing: 15
+    center: [2.2137, 46.2276], // Centre de la France 
+    zoom: 5, pitch: 0, bearing: 0 // Vue au-dessus (dézoomé)
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }));
+
+// --- GESTION DE LA LANDING PAGE & RECHERCHE VILLE (Sans API Key) ---
+const landingPage = document.getElementById('landing-page');
+const searchInput = document.getElementById('city-search');
+const searchResults = document.getElementById('search-results');
+let searchTimeout = null;
+
+// Bouton "Ouvrir la carte globale" (Passer)
+document.getElementById('btn-skip-landing').addEventListener('click', () => {
+    landingPage.classList.add('hidden');
+    instructions.classList.remove('hidden');
+});
+
+// Autocomplétion Nominatim (OpenStreetMap gratuit)
+searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const query = e.target.value;
+    
+    if (query.length < 3) { 
+        searchResults.classList.add('hidden'); 
+        return; 
+    }
+
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+            const data = await res.json();
+            
+            searchResults.innerHTML = '';
+            if (data.length > 0) {
+                searchResults.classList.remove('hidden');
+                data.forEach(place => {
+                    const li = document.createElement('li');
+                    li.textContent = place.display_name;
+                    li.addEventListener('click', () => {
+                        landingPage.classList.add('hidden');
+                        instructions.classList.remove('hidden');
+                        // On zoome sur la ville et on incline si 3D est coché
+                        map.flyTo({
+                            center: [place.lon, place.lat],
+                            zoom: 13,
+                            pitch: document.getElementById('toggle-3d').checked ? 65 : 0
+                        });
+                    });
+                    searchResults.appendChild(li);
+                });
+            }
+        } catch (error) {
+            console.error("Erreur de recherche", error);
+        }
+    }, 500); // 500ms debounce pour ne pas spammer l'API Nominatim
+});
+
 
 // --- GESTION DE L'INTERFACE UI ---
 const sidebar = document.getElementById('sidebar');
@@ -57,8 +112,22 @@ document.getElementById('toggle-hiking-layer').addEventListener('change', (e) =>
     map.setLayoutProperty('hiking-layer', 'visibility', e.target.checked ? 'visible' : 'none');
 });
 
+// Nouveau: Toggle pour Relief 3D
+document.getElementById('toggle-3d').addEventListener('change', (e) => {
+    if (e.target.checked) {
+        map.setTerrain({ source: 'terrainSource', exaggeration: 1.5 });
+        map.easeTo({ pitch: 65, duration: 1000 });
+    } else {
+        map.setTerrain(null);
+        map.easeTo({ pitch: 0, duration: 1000 });
+    }
+});
+
+
 // --- CLICS CARTE ---
 map.on('click', async (e) => {
+    // Si la landing page est encore visible on bloque les clics map
+    if (!landingPage.classList.contains('hidden')) return;
     if (waypoints.length >= 2) return;
 
     const coords = [e.lngLat.lng, e.lngLat.lat];
@@ -95,32 +164,26 @@ async function calculerItineraire(start, end) {
             fetch(urlMeteo)
         ]);
 
-        // 1. SÉCURITÉ MÉTÉO : Si l'API météo plante (ex: 503), on met 20°C par défaut
         let temperature = 20; 
         if (resMeteo.ok) {
             const dataMeteo = await resMeteo.json();
-            // Le petit "?" empêche le crash si current_weather est absent
             temperature = dataMeteo.current_weather?.temperature || 20; 
-        } else {
-            console.warn("⚠️ API Météo indisponible, utilisation de 20°C par défaut.");
         }
 
-        // 2. SÉCURITÉ RANDO : Si le Worker ou OpenRouteService renvoie une erreur 503
         if (!resRando.ok) {
-            instructionText.innerText = `Le serveur de calcul est surchargé (Erreur ${resRando.status}). Réessaie dans 10 secondes.`;
+            instructionText.innerText = `Le serveur de calcul est surchargé. Réessaie.`;
             return;
         }
 
         const dataRando = await resRando.json();
-        
-        // 3. Vérification des erreurs de routage (ex: points trop éloignés)
         if (dataRando.error) {
             instructionText.innerText = `Erreur : ${dataRando.error.message || "Erreur de routage"}`;
             return;
         }
 
-        // Si tout est bon, on affiche !
+        // Succès !
         const routeGeoJSON = dataRando.features[0];
+        currentGeoJSON = routeGeoJSON; // On garde en mémoire pour l'export GPX
         
         afficherTracerSurCarte(routeGeoJSON);
         calculerEtAfficherStats(routeGeoJSON, temperature);
@@ -128,6 +191,7 @@ async function calculerItineraire(start, end) {
 
         instructions.classList.add('hidden');
         sidebar.classList.remove('hidden');
+        document.getElementById('btn-export').classList.remove('hidden'); // On active l'export
         fab.classList.add('hidden');
 
     } catch (error) {
@@ -180,27 +244,23 @@ function calculerEtAfficherStats(geojson, temperature) {
 function extraireNomsEtSurfaces(geojson) {
     const props = geojson.properties;
     
-    // Conteneurs et leurs "Cards" parentes respectives
     const containerNoms = document.getElementById('trail-names');
     const cardNoms = containerNoms.closest('.inner-card');
-    
     const containerSurfaces = document.getElementById('surfaces-container');
     const cardSurfaces = containerSurfaces.closest('.inner-card');
 
-    // 1. Gestion des noms de sentiers
     const nomsSentiers = new Set();
     if (props.segments && props.segments[0].steps) {
         props.segments[0].steps.forEach(step => { if (step.name && step.name !== '-') nomsSentiers.add(step.name); });
     }
 
     if (nomsSentiers.size > 0) {
-        cardNoms.style.display = 'block'; // On affiche la carte entière
+        cardNoms.style.display = 'block'; 
         containerNoms.innerHTML = Array.from(nomsSentiers).map(nom => `<span class="trail-chip">${nom}</span>`).join('');
     } else {
-        cardNoms.style.display = 'none'; // On cache complètement la carte
+        cardNoms.style.display = 'none'; 
     }
 
-    // 2. Gestion des surfaces
     const dictionnaireSurfaces = {
         1: 'Goudron', 2: 'Chemin non revêtu', 3: 'Asphalte', 4: 'Béton', 
         11: 'Gravier', 12: 'Cailloux', 13: 'Chemin de terre', 14: 'Terre battue', 
@@ -210,7 +270,7 @@ function extraireNomsEtSurfaces(geojson) {
     containerSurfaces.innerHTML = '';
     
     if (props.extras && props.extras.surface) {
-        cardSurfaces.style.display = 'block'; // On affiche la carte entière
+        cardSurfaces.style.display = 'block'; 
         const totalPoints = geojson.geometry.coordinates.length; 
         const statsSurfaces = {};
 
@@ -229,19 +289,53 @@ function extraireNomsEtSurfaces(geojson) {
             }
         }
     } else {
-        cardSurfaces.style.display = 'none'; // On cache complètement la carte
+        cardSurfaces.style.display = 'none'; 
     }
 }
+
+// --- EXPORT GPX (Full JS) ---
+document.getElementById('btn-export').addEventListener('click', () => {
+    if (!currentGeoJSON) return;
+
+    const coords = currentGeoJSON.geometry.coordinates;
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Rando 3D">
+  <trk>
+    <name>Ma Rando 3D</name>
+    <trkseg>\n`;
+
+    coords.forEach(c => {
+        const elevation = c[2] ? `<ele>${c[2]}</ele>` : '';
+        gpx += `      <trkpt lat="${c[1]}" lon="${c[0]}">${elevation}</trkpt>\n`;
+    });
+
+    gpx += `    </trkseg>
+  </trk>
+</gpx>`;
+
+    // Création d'un Blob et téléchargement simulé
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = 'itineraire_rando.gpx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+});
 
 // --- RÉINITIALISATION ---
 document.getElementById('btn-reset').addEventListener('click', () => {
     waypoints = [];
+    currentGeoJSON = null;
     markers.forEach(m => m.remove());
     markers = [];
     if (map.getSource('route')) map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
     
     sidebar.classList.add('hidden');
     fab.classList.add('hidden');
+    document.getElementById('btn-export').classList.add('hidden'); // Cache le bouton export
     instructions.classList.remove('hidden');
     instructionText.innerHTML = "Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.";
 });
