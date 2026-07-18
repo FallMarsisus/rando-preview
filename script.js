@@ -22,7 +22,7 @@ const map = new maplibregl.Map({
                 tileSize: 256, 
                 attribution: '| Randos &copy; Waymarked Trails' 
             },
-            // Source Mondiale Open Data AWS (Mapzen Terrarium) - Gratuite et sans clé API
+            // Source Mondiale Open Data AWS (Mapzen Terrarium)
             'terrainSource': { 
                 type: 'raster-dem', 
                 tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
@@ -133,7 +133,7 @@ function determinerDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-// Récupère les points d'intérêts et crée la liste des recommandations
+// Récupère les points d'intérêts et crée la liste des recommandations avec FILTRE ALTITUDE
 async function genererRecommendations(lat, lon) {
     instructionText.innerText = "Recherche des plus beaux points d'intérêt aux alentours...";
     const container = document.getElementById('recoms-container');
@@ -148,7 +148,7 @@ async function genererRecommendations(lat, lon) {
           node["tourism"="viewpoint"](around:12000, ${lat}, ${lon});
           node["natural"="water"](around:12000, ${lat}, ${lon});
         );
-        out body 9;
+        out body 15;
     `;
 
     try {
@@ -161,8 +161,22 @@ async function genererRecommendations(lat, lon) {
             return;
         }
 
+        let cartesAffichees = 0;
+
         data.elements.forEach(el => {
-            const name = el.tags.name || (el.tags.natural === "peak" ? "Sommet anonyme" : "Point de vue");
+            // Extraction et vérification de l'altitude (tag 'ele')
+            const altitude = el.tags.ele ? parseInt(el.tags.ele, 10) : null;
+
+            // FILTRE DE SÉCURITÉ HAUTE MONTAGNE
+            // Si le sommet culmine à plus de 3000m, on considère que c'est du domaine de l'alpinisme/haute randonnée exclue
+            if (altitude && altitude > 3000) {
+                return; 
+            }
+
+            const baseName = el.tags.name || (el.tags.natural === "peak" ? "Sommet anonyme" : "Point de vue");
+            // On ajoute la mention de l'altitude dans le nom si elle est connue
+            const name = altitude ? `${baseName} (${altitude} m)` : baseName;
+            
             const distance = determinerDistance(lat, lon, el.lat, el.lon);
             
             let diffClass = "facile";
@@ -189,14 +203,14 @@ async function genererRecommendations(lat, lon) {
                 <div class="recom-meta">
                     <div style="display:flex; align-items:center; gap:4px;">
                         <span class="material-symbols-outlined">${icon}</span>
-                        <span>~${(distance * 2).toFixed(1)} km (Aller-Retour)</span>
+                        <span>~${(distance * 2).toFixed(1)} km (A/R)</span>
                     </div>
                 </div>
             `;
 
             card.addEventListener('click', async () => {
                 document.getElementById('recoms-panel').classList.remove('visible');
-                instructionText.innerText = `Création de l'itinéraire vers : ${name}...`;
+                instructionText.innerText = `Création de l'itinéraire vers : ${baseName}...`;
                 instructions.classList.remove('hidden');
 
                 waypoints = [cityCenter, [el.lon, el.lat]];
@@ -210,9 +224,15 @@ async function genererRecommendations(lat, lon) {
             });
 
             container.appendChild(card);
+            cartesAffichees++;
         });
 
-        instructionText.innerHTML = "<b>Suggestions prêtes !</b> Choisis une rando dans la liste ou clique manuellement sur la carte.";
+        if (cartesAffichees === 0) {
+            container.innerHTML = `<div class="loading-text">Les sommets environnants nécessitent un équipement d'alpinisme (hors limites de randonnée pédestre).</div>`;
+            instructionText.innerHTML = "Clique manuellement sur la carte pour définir ton propre tracé.";
+        } else {
+            instructionText.innerHTML = "<b>Suggestions prêtes !</b> Choisis une rando adaptée ou clique sur la carte.";
+        }
     } catch (error) {
         console.error("Erreur Overpass :", error);
         container.innerHTML = `<div class="loading-text">Impossible de charger les suggestions.</div>`;
