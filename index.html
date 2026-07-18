@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Rando 3D</title>
 
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
@@ -17,16 +17,54 @@
 
     <div id="landing-page">
         <div class="landing-content">
-            <h1 class="landing-title">Rando 3D</h1>
-            <p class="landing-subtitle">Créez et analysez vos itinéraires de randonnée n'importe où dans le monde.</p>
+            <div class="landing-brand">
+                <span class="material-symbols-outlined brand-icon">explore</span>
+                <h1 class="landing-title">Rando 3D</h1>
+            </div>
+            <p class="landing-subtitle">Explorez le relief mondial en temps réel et planifiez vos itinéraires sans frictions.</p>
             
             <div class="search-container">
                 <span class="material-symbols-outlined search-icon">search</span>
-                <input type="text" id="city-search" placeholder="Rechercher une ville..." autocomplete="off">
+                <input type="text" id="city-search" placeholder="Où voulez-vous marcher ?" autocomplete="off">
                 <ul id="search-results" class="hidden"></ul>
             </div>
 
-            <button id="btn-skip-landing" class="md-button-text">
+            <div class="preferences-box">
+                <h3 class="prefs-title">Configurez votre profil de marche</h3>
+                
+                <div class="pref-group">
+                    <span class="pref-label">Niveaux ciblés</span>
+                    <div class="chips-selector">
+                        <label class="choice-chip">
+                            <input type="checkbox" checked name="pref-diff" value="facile">
+                            <span>Facile</span>
+                        </label>
+                        <label class="choice-chip">
+                            <input type="checkbox" checked name="pref-diff" value="moyen">
+                            <span>Moyen</span>
+                        </label>
+                        <label class="choice-chip">
+                            <input type="checkbox" name="pref-diff" value="difficile">
+                            <span>Difficile</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="pref-group">
+                    <label for="radius-select" class="pref-label">Rayon d'action max (autour de la ville)</label>
+                    <div class="select-wrapper">
+                        <select id="radius-select" class="md-select">
+                            <option value="5000">5 km (Balades courtes)</option>
+                            <option value="10000">10 km (Randonnée standard)</option>
+                            <option value="15000" selected>15 km (Recommandé montagne)</option>
+                            <option value="20000">20 km (Grande journée)</option>
+                            <option value="35000">35 km (Exploration totale)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-skip-landing" class="md-button md-button-secondary full-width">
                 Ouvrir la carte globale
             </button>
         </div>
@@ -36,7 +74,7 @@
 
     <div id="instructions" class="md-snackbar hidden">
         <span class="material-symbols-outlined">touch_app</span>
-        <span id="instruction-text">Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.</span>
+        <span id="instruction-text">Sélectionnez une destination ou cliquez sur la carte pour commencer.</span>
     </div>
 
     <div id="top-controls">
@@ -48,94 +86,94 @@
             <label for="mode-rando"><span class="material-symbols-outlined">hiking</span> Rando</label>
         </div>
 
-        <div class="md-switch-container">
-            <label class="md-switch">
-                <input type="checkbox" id="toggle-hiking-layer" checked>
-                <span class="md-slider"></span>
-            </label>
-            <span>Traces OSM</span>
-        </div>
-
-        <div class="md-switch-container">
-            <label class="md-switch">
-                <input type="checkbox" id="toggle-3d" checked>
-                <span class="md-slider"></span>
-            </label>
-            <span>Relief 3D</span>
+        <div class="md-switch-card">
+            <div class="switch-row">
+                <span>Traces OSM</span>
+                <label class="md-switch">
+                    <input type="checkbox" id="toggle-hiking-layer" checked>
+                    <span class="md-slider"></span>
+                </label>
+            </div>
+            <div class="switch-row">
+                <span>Relief 3D</span>
+                <label class="md-switch">
+                    <input type="checkbox" id="toggle-3d" checked>
+                    <span class="md-slider"></span>
+                </label>
+            </div>
         </div>
     </div>
 
     <aside id="recoms-panel" class="hidden">
         <div class="sidebar-header">
-            <h2 class="md-title">Randos suggérées</h2>
+            <div class="header-title-group">
+                <span class="material-symbols-outlined header-icon">auto_awesome</span>
+                <h2 class="md-title">Destinations suggérées</h2>
+            </div>
             <button id="btn-close-recoms" class="icon-button"><span class="material-symbols-outlined">close</span></button>
         </div>
-        
-        <div class="panel-options">
-            <label for="radius-select">Rayon de recherche maximum</label>
-            <select id="radius-select" class="md-select">
-                <option value="5000">5 km (Courte distance)</option>
-                <option value="10000">10 km</option>
-                <option value="15000" selected>15 km (Par défaut)</option>
-                <option value="20000">20 km</option>
-                <option value="35000">35 km (Haute montagne)</option>
-            </select>
-        </div>
-
         <div class="sidebar-content" id="recoms-container">
             </div>
     </aside>
+
     <aside id="sidebar" class="hidden">
         <div class="sidebar-header">
-            <h2 class="md-title">Détails de l'itinéraire</h2>
+            <div class="header-title-group">
+                <span class="material-symbols-outlined header-icon">timeline</span>
+                <h2 class="md-title">Analyse du tracé</h2>
+            </div>
             <button id="btn-close-sidebar" class="icon-button"><span class="material-symbols-outlined">close</span></button>
         </div>
         
         <div class="sidebar-content">
-            
             <div class="inner-card">
                 <div class="tiles-grid">
                     <div class="md-tile">
                         <span class="material-symbols-outlined tile-icon">straighten</span>
                         <div class="tile-val"><span id="stat-dist">--</span> km</div>
+                        <span class="tile-label">Distance</span>
                     </div>
                     <div class="md-tile">
                         <span class="material-symbols-outlined tile-icon">timer</span>
                         <div class="tile-val"><span id="stat-time">--</span></div>
+                        <span class="tile-label">Durée est.</span>
                     </div>
                     <div class="md-tile">
-                        <span class="material-symbols-outlined tile-icon" style="color: #188038;">trending_up</span>
+                        <span class="material-symbols-outlined tile-icon" style="color: var(--md-sys-color-success);">trending_up</span>
                         <div class="tile-val"><span id="stat-dplus">--</span> m</div>
+                        <span class="tile-label">Dénivelé +</span>
                     </div>
                     <div class="md-tile">
-                        <span class="material-symbols-outlined tile-icon" style="color: #d93025;">trending_down</span>
+                        <span class="material-symbols-outlined tile-icon" style="color: var(--md-sys-color-error);">trending_down</span>
                         <div class="tile-val"><span id="stat-dminus">--</span> m</div>
+                        <span class="tile-label">Dénivelé -</span>
                     </div>
                     <div class="md-tile">
-                        <span class="material-symbols-outlined tile-icon" style="color: #0b57d0;">water_drop</span>
+                        <span class="material-symbols-outlined tile-icon" style="color: #2b6cb0;">water_drop</span>
                         <div class="tile-val"><span id="stat-water">--</span> L</div>
+                        <span class="tile-label">Eau requise</span>
                     </div>
                     <div class="md-tile">
-                        <span class="material-symbols-outlined tile-icon" style="color: #f29900;">thermostat</span>
+                        <span class="material-symbols-outlined tile-icon" style="color: #dd6b20;">thermostat</span>
                         <div class="tile-val"><span id="stat-temp">--</span>°C</div>
+                        <span class="tile-label">Météo dép.</span>
                     </div>
                 </div>
             </div>
 
             <div class="inner-card">
-                <h3 class="card-subtitle"><span class="material-symbols-outlined">landscape</span> Nature du sol</h3>
+                <h3 class="card-subtitle"><span class="material-symbols-outlined">layers</span> Texture du terrain</h3>
                 <div id="surfaces-container" class="card-body">
-                    <div class="loading-text">Analyse en cours...</div>
+                    <div class="loading-text">En attente de calcul...</div>
                 </div>
             </div>
 
             <div class="inner-card">
-                <h3 class="card-subtitle"><span class="material-symbols-outlined">signpost</span> Chemins empruntés</h3>
+                <h3 class="card-subtitle"><span class="material-symbols-outlined">signpost</span> Sentiers empruntés</h3>
                 <div id="trail-names" class="trail-list card-body">
-                    <div class="loading-text">Analyse en cours...</div>
+                    <div class="loading-text">En attente de calcul...</div>
                 </div>
             </div>
-
         </div>
 
         <div class="sidebar-footer">
@@ -145,15 +183,15 @@
                 </button>
                 <button id="btn-reset" class="md-button md-button-primary">
                     <span class="material-symbols-outlined">add_location_alt</span>
-                    Nouvelle trace
+                    Nouveau tracé
                 </button>
             </div>
         </div>
     </aside>
-<button id="btn-reopen" class="md-fab hidden">
+
+    <button id="btn-reopen" class="md-fab hidden">
         <span class="material-symbols-outlined">query_stats</span>
     </button>
-
     <button id="btn-reopen-recoms" class="md-fab hidden">
         <span class="material-symbols-outlined">explore</span>
     </button>
