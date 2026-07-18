@@ -1,7 +1,8 @@
 let waypoints = [];
 let markers = [];
 let currentProfile = 'foot-hiking'; 
-let currentGeoJSON = null; // Stocke la dernière trace pour l'export GPX
+let currentGeoJSON = null; 
+let cityCenter = null; // Stocke les coordonnées de la ville sélectionnée
 
 // --- INITIALISATION DE LA CARTE ---
 const map = new maplibregl.Map({
@@ -21,18 +22,16 @@ const map = new maplibregl.Map({
                 tileSize: 256, 
                 attribution: '| Randos &copy; Waymarked Trails' 
             },
-            // Source Mondiale Open Data AWS (Mapzen Terrarium) - Gratuite et sans clé API
             'terrainSource': { 
                 type: 'raster-dem', 
                 tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
-                encoding: 'terrarium', // Indique à MapLibre comment interpréter le relief
+                encoding: 'terrarium', 
                 tileSize: 256,
                 maxzoom: 14
             }
         },
         layers: [
             { id: 'osm-layer', type: 'raster', source: 'osm' },
-            // Le hillshade ajoute des ombres de relief réalistes
             { 
                 id: 'hillshade-layer', 
                 type: 'hillshade', 
@@ -45,32 +44,29 @@ const map = new maplibregl.Map({
             { id: 'hiking-layer', type: 'raster', source: 'hiking-trails', minzoom: 12, paint: { 'raster-opacity': 0.4 }, layout: { 'visibility': 'visible' } }
         ]
     },
-    center: [2.2137, 46.2276], // Centre de la France au démarrage
+    center: [2.2137, 46.2276], 
     zoom: 5.5, 
-    pitch: 0, // À plat initialement (vue globale)
+    pitch: 0, 
     bearing: 0
 });
 
-// Dès que la carte est chargée, on active le maillage 3D du terrain par défaut
 map.on('load', () => {
     map.setTerrain({ source: 'terrainSource', exaggeration: 1.5 });
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }));
 
-// --- GESTION DE LA LANDING PAGE & RECHERCHE VILLE (Sans API Key) ---
+// --- GESTION DE LA LANDING PAGE & RECHERCHE VILLE ---
 const landingPage = document.getElementById('landing-page');
 const searchInput = document.getElementById('city-search');
 const searchResults = document.getElementById('search-results');
 let searchTimeout = null;
 
-// Bouton "Ouvrir la carte globale"
 document.getElementById('btn-skip-landing').addEventListener('click', () => {
     landingPage.classList.add('hidden');
     instructions.classList.remove('hidden');
 });
 
-// Autocomplétion Nominatim (OpenStreetMap gratuit)
 searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     const query = e.target.value.trim();
@@ -100,19 +96,19 @@ searchInput.addEventListener('input', (e) => {
                         
                         const lat = parseFloat(place.lat);
                         const lon = parseFloat(place.lon);
+                        cityCenter = [lon, lat]; // Sauvegarde du centre-ville
                         const is3DActive = document.getElementById('toggle-3d').checked;
 
-                        // Vol fluide vers la ville cherchée
                         map.flyTo({
-                            center: [lon, lat],
+                            center: cityCenter,
                             zoom: 13,
                             pitch: is3DActive ? 65 : 0,
                             bearing: is3DActive ? 20 : 0,
                             duration: 2500
                         });
 
-                        // Lancement de la recherche Overpass pour récupérer les randos locales
-                        chercherRandosAutour(lat, lon);
+                        // Génère les recommandations basées sur les POI réels
+                        genererRecommendations(lat, lon);
                     });
                     searchResults.appendChild(li);
                 });
@@ -125,87 +121,106 @@ searchInput.addEventListener('input', (e) => {
     }, 500);
 });
 
-// Récupération des randonnées existantes via l'API Overpass d'OpenStreetMap (Rayon de 5km)
-async function chercherRandosAutour(lat, lon) {
-    instructionText.innerText = "Recherche des itinéraires de randonnée à proximité...";
-    
+// Calcul de distance à vol d'oiseau (Formule de Haversine)
+function determinerDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; 
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// NOUVEAU : Récupère les points d'intérêts et crée la liste des recommandations
+async function genererRecommendations(lat, lon) {
+    instructionText.innerText = "Recherche des plus beaux points d'intérêt aux alentours...";
+    const container = document.getElementById('recoms-container');
+    container.innerHTML = '<div class="loading-text">Analyse géographique en cours...</div>';
+    document.getElementById('recoms-panel').classList.add('visible');
+
+    // Requête sur les sommets, points de vue et lacs dans un rayon de 12km
     const query = `
         [out:json][timeout:25];
-        relation["route"="hiking"](around:5000, ${lat}, ${lon});
-        out geom;
+        (
+          node["natural"="peak"](around:12000, ${lat}, ${lon});
+          node["tourism"="viewpoint"](around:12000, ${lat}, ${lon});
+          node["natural"="water"](around:12000, ${lat}, ${lon});
+        );
+        out body 9;
     `;
 
     try {
-        const res = await fetch("https://overpass-api.de/api/interpreter", {
-            method: "POST",
-            body: query
-        });
+        const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query });
         const data = await res.json();
+        container.innerHTML = '';
 
-        const features = [];
+        if (!data.elements || data.elements.length === 0) {
+            container.innerHTML = '<div class="loading-text">Aucun point d'intérêt majeur identifié à proximité.</div>';
+            return;
+        }
+
         data.elements.forEach(el => {
-            if (el.type === "relation" && el.members) {
-                const coordinates = [];
-                el.members.forEach(m => {
-                    if (m.type === "way" && m.geometry) {
-                        coordinates.push(m.geometry.map(g => [g.lon, g.lat]));
-                    }
-                });
-                if (coordinates.length > 0) {
-                    features.push({
-                        type: "Feature",
-                        properties: { name: el.tags?.name || "Randonnée sans nom" },
-                        geometry: { type: "MultiLineString", coordinates: coordinates }
-                    });
-                }
+            const name = el.tags.name || (el.tags.natural === "peak" ? "Sommet anonyme" : "Point de vue");
+            const distance = determinerDistance(lat, lon, el.lat, el.lon);
+            
+            // Définition de la difficulté et des métadonnées selon la distance linéaire
+            let diffClass = "facile";
+            let diffLabel = "Facile";
+            let icon = "landscape";
+
+            if (distance >= 3 && distance < 6) {
+                diffClass = "moyen";
+                diffLabel = "Moyen";
+                icon = "filter_hdr";
+            } else if (distance >= 6) {
+                diffClass = "difficile";
+                diffLabel = "Difficile";
+                icon = "terrain";
             }
+
+            // Création graphique du composant de la recommandation
+            const card = document.createElement('div');
+            card.className = 'recom-card';
+            card.innerHTML = `
+                <div class="recom-header">
+                    <span class="recom-name">${name}</span>
+                    <span class="difficulty-badge badge-${diffClass}">${diffLabel}</span>
+                </div>
+                <div class="recom-meta">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="material-symbols-outlined">${icon}</span>
+                        <span>~${(distance * 2).toFixed(1)} km (Aller-Retour)</span>
+                    </div>
+                </div>
+            `;
+
+            // Au clic, on pré-génère et trace automatiquement la rando complète vers ce POI
+            card.addEventListener('click', async () => {
+                document.getElementById('recoms-panel').classList.remove('visible');
+                instructionText.innerText = `Création de l'itinéraire vers : ${name}...`;
+                instructions.classList.remove('hidden');
+
+                // Réinitialise les anciens tracés et marqueurs
+                waypoints = [cityCenter, [el.lon, el.lat]];
+                markers.forEach(m => m.remove());
+                markers = [];
+
+                // Pose des nouveaux marqueurs automatiques
+                markers.push(new maplibregl.Marker({ color: '#188038' }).setLngLat(cityCenter).addTo(map));
+                markers.push(new maplibregl.Marker({ color: '#d93025' }).setLngLat([el.lon, el.lat]).addTo(map));
+
+                await calculerItineraire(cityCenter, [el.lon, el.lat]);
+            });
+
+            container.appendChild(card);
         });
 
-        if (features.length > 0) {
-            const geojson = { type: "FeatureCollection", features: features };
-
-            if (map.getSource('local-hikes')) {
-                map.getSource('local-hikes').setData(geojson);
-            } else {
-                map.addSource('local-hikes', { type: 'geojson', data: geojson });
-                
-                // Tracé blanc de lueur d'arrière-plan
-                map.addLayer({ 
-                    id: 'local-hikes-glow', 
-                    type: 'line', 
-                    source: 'local-hikes', 
-                    layout: { 'line-join': 'round', 'line-cap': 'round' }, 
-                    paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.6 } 
-                });
-
-                // Ligne pointillée rouge distinctive M3
-                map.addLayer({ 
-                    id: 'local-hikes-line', 
-                    type: 'line', 
-                    source: 'local-hikes', 
-                    layout: { 'line-join': 'round', 'line-cap': 'round' }, 
-                    paint: { 'line-color': '#d93025', 'line-width': 3, 'line-dasharray': [2, 2] } 
-                });
-
-                // Interaction : Affiche le nom de la randonnée locale trouvée sur OSM au clic
-                map.on('click', 'local-hikes-line', (e) => {
-                    if (waypoints.length === 0) {
-                        const randoName = e.features[0].properties.name;
-                        instructionText.innerHTML = `Idée d'itinéraire : <b>${randoName}</b>. Place tes repères pour la tracer !`;
-                    }
-                });
-                
-                map.on('mouseenter', 'local-hikes-line', () => map.getCanvas().style.cursor = 'pointer');
-                map.on('mouseleave', 'local-hikes-line', () => map.getCanvas().style.cursor = '');
-            }
-            
-            instructionText.innerHTML = `<b>${features.length} randos</b> trouvées autour de la ville ! Clique pour tracer : <b>Départ</b> puis <b>Arrivée</b>.`;
-        } else {
-            instructionText.innerHTML = `Aucune rando officielle trouvée à proximité. Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.`;
-        }
+        instructionText.innerHTML = "<b>Suggestions prêtes !</b> Choisis une rando dans la liste ou clique manuellement sur la carte.";
     } catch (error) {
-        console.error("Erreur Overpass API :", error);
-        instructionText.innerHTML = `Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.`;
+        console.error("Erreur Overpass :", error);
+        container.innerHTML = '<div class="loading-text">Impossible de charger les suggestions.</div>';
     }
 }
 
@@ -219,6 +234,10 @@ const instructionText = document.getElementById('instruction-text');
 document.getElementById('btn-close-sidebar').addEventListener('click', () => {
     sidebar.classList.add('hidden');
     if (waypoints.length === 2) fab.classList.remove('hidden');
+});
+
+document.getElementById('btn-close-recoms').addEventListener('click', () => {
+    document.getElementById('recoms-panel').classList.remove('visible');
 });
 
 fab.addEventListener('click', () => {
@@ -241,7 +260,6 @@ document.getElementById('toggle-hiking-layer').addEventListener('change', (e) =>
     map.setLayoutProperty('hiking-layer', 'visibility', e.target.checked ? 'visible' : 'none');
 });
 
-// Interrupteur Relief 3D (Vraies altitudes mondiales)
 document.getElementById('toggle-3d').addEventListener('change', (e) => {
     if (e.target.checked) {
         map.setTerrain({ source: 'terrainSource', exaggeration: 1.5 });
@@ -255,7 +273,7 @@ document.getElementById('toggle-3d').addEventListener('change', (e) => {
 
 // --- CLICS CARTE ---
 map.on('click', async (e) => {
-    if (!landingPage.classList.contains('hidden')) return; // Bloque si l'accueil est actif
+    if (!landingPage.classList.contains('hidden')) return; 
     if (waypoints.length >= 2) return;
 
     const coords = [e.lngLat.lng, e.lngLat.lat];
@@ -266,6 +284,7 @@ map.on('click', async (e) => {
     markers.push(marker);
 
     if (waypoints.length === 2) {
+        document.getElementById('recoms-panel').classList.remove('visible');
         instructionText.innerText = "Calcul et analyse en cours...";
         await calculerItineraire(waypoints[0], waypoints[1]);
     }
@@ -284,11 +303,7 @@ async function calculerItineraire(start, end) {
             fetch(urlRando, {
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    coordinates: [start, end], 
-                    elevation: true, 
-                    extra_info: ["surface"] 
-                })
+                body: JSON.stringify({ coordinates: [start, end], elevation: true, extra_info: ["surface"] })
             }),
             fetch(urlMeteo)
         ]);
@@ -305,14 +320,13 @@ async function calculerItineraire(start, end) {
         }
 
         const dataRando = await resRando.json();
-        
         if (dataRando.error) {
             instructionText.innerText = `Erreur : ${dataRando.error.message || "Erreur de routage"}`;
             return;
         }
 
         const routeGeoJSON = dataRando.features[0];
-        currentGeoJSON = routeGeoJSON; // Mise en mémoire pour le bouton de téléchargement GPX
+        currentGeoJSON = routeGeoJSON; 
         
         afficherTracerSurCarte(routeGeoJSON);
         calculerEtAfficherStats(routeGeoJSON, temperature);
@@ -320,7 +334,7 @@ async function calculerItineraire(start, end) {
 
         instructions.classList.add('hidden');
         sidebar.classList.remove('hidden');
-        document.getElementById('btn-export').classList.remove('hidden'); // Rendre le bouton d'export visible
+        document.getElementById('btn-export').classList.remove('hidden'); 
         fab.classList.add('hidden');
 
     } catch (error) {
@@ -328,7 +342,6 @@ async function calculerItineraire(start, end) {
         instructionText.innerText = "Erreur réseau. Impossible de joindre les serveurs.";
     }
 }
-
 
 function afficherTracerSurCarte(geojson) {
     if (map.getSource('route')) {
@@ -338,8 +351,12 @@ function afficherTracerSurCarte(geojson) {
         map.addLayer({ id: 'route-line-outline', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 8 } });
         map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#0b57d0', 'line-width': 5 } });
     }
+    
+    // Zoom automatique pour englober la randonnée calculée
+    const coordinates = geojson.geometry.coordinates;
+    const bounds = coordinates.reduce((bounds, coord) => bounds.extend(coord), new maplibregl.LngLatBounds(coordinates[0], coordinates[0]));
+    map.fitBounds(bounds, { padding: 50, pitch: document.getElementById('toggle-3d').checked ? 65 : 0 });
 }
-
 
 // --- MATHS STATS ---
 function calculerEtAfficherStats(geojson, temperature) {
@@ -354,7 +371,6 @@ function calculerEtAfficherStats(geojson, temperature) {
     }
 
     const distanceKm = geojson.properties.summary.distance / 1000;
-    
     const tempsHeuresDecimal = (distanceKm / 4) + (dPlus / 600);
     const heures = Math.floor(tempsHeuresDecimal);
     const minutes = Math.round((tempsHeuresDecimal - heures) * 60);
@@ -370,14 +386,11 @@ function calculerEtAfficherStats(geojson, temperature) {
     document.getElementById('stat-temp').innerText = temperature;
 }
 
-
-// --- EXTRACTION ET GESTION DYNAMIQUE DES CARTES ---
+// --- EXTRACTION DES COMPOSANTS DE VOIE ---
 function extraireNomsEtSurfaces(geojson) {
     const props = geojson.properties;
-    
     const containerNoms = document.getElementById('trail-names');
     const cardNoms = containerNoms.closest('.inner-card');
-    
     const containerSurfaces = document.getElementById('surfaces-container');
     const cardSurfaces = containerSurfaces.closest('.inner-card');
 
@@ -425,40 +438,28 @@ function extraireNomsEtSurfaces(geojson) {
     }
 }
 
-
-// --- EXPORT GPX (Full JS sans Backend) ---
+// --- EXPORT GPX ---
 document.getElementById('btn-export').addEventListener('click', () => {
     if (!currentGeoJSON) return;
 
     const coords = currentGeoJSON.geometry.coordinates;
-    let gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Rando 3D">
-  <trk>
-    <name>Ma Rando 3D</name>
-    <trkseg>\n`;
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Rando 3D">\n  <trk>\n    <name>Ma Rando 3D</name>\n    <trkseg>\n`;
 
     coords.forEach(c => {
         const elevation = c[2] ? `<ele>${c[2]}</ele>` : '';
         gpx += `      <trkpt lat="${c[1]}" lon="${c[0]}">${elevation}</trkpt>\n`;
     });
 
-    gpx += `    </trkseg>
-  </trk>
-</gpx>`;
+    gpx += `    </trkseg>\n  </trk>\n</gpx>`;
 
     const blob = new Blob([gpx], { type: 'application/gpx+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = 'itineraire_rando.gpx';
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
+    a.style.display = 'none'; a.href = url; a.download = 'itineraire_rando.gpx';
+    document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url);
 });
 
-
-// --- RÉINITIALISATION ---
+// --- REINITIALISATION ---
 document.getElementById('btn-reset').addEventListener('click', () => {
     waypoints = [];
     currentGeoJSON = null;
@@ -466,11 +467,16 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     markers = [];
     
     if (map.getSource('route')) map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
-    if (map.getSource('local-hikes')) map.getSource('local-hikes').setData({ type: 'FeatureCollection', features: [] });
     
     sidebar.classList.add('hidden');
     fab.classList.add('hidden');
     document.getElementById('btn-export').classList.add('hidden'); 
+    
+    // Rouvre les recommandations d'origine si une ville est connue
+    if (cityCenter) {
+        document.getElementById('recoms-panel').classList.add('visible');
+    }
+    
     instructions.classList.remove('hidden');
     instructionText.innerHTML = "Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.";
 });
