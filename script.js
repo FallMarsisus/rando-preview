@@ -22,6 +22,7 @@ const map = new maplibregl.Map({
                 tileSize: 256, 
                 attribution: '| Randos &copy; Waymarked Trails' 
             },
+            // Source Mondiale Open Data AWS (Mapzen Terrarium) - Gratuite et sans clé API
             'terrainSource': { 
                 type: 'raster-dem', 
                 tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
@@ -96,7 +97,7 @@ searchInput.addEventListener('input', (e) => {
                         
                         const lat = parseFloat(place.lat);
                         const lon = parseFloat(place.lon);
-                        cityCenter = [lon, lat]; // Sauvegarde du centre-ville
+                        cityCenter = [lon, lat]; 
                         const is3DActive = document.getElementById('toggle-3d').checked;
 
                         map.flyTo({
@@ -107,7 +108,6 @@ searchInput.addEventListener('input', (e) => {
                             duration: 2500
                         });
 
-                        // Génère les recommandations basées sur les POI réels
                         genererRecommendations(lat, lon);
                     });
                     searchResults.appendChild(li);
@@ -133,11 +133,11 @@ function determinerDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-// NOUVEAU : Récupère les points d'intérêts et crée la liste des recommandations
+// Récupère les points d'intérêts et crée la liste des recommandations
 async function genererRecommendations(lat, lon) {
     instructionText.innerText = "Recherche des plus beaux points d'intérêt aux alentours...";
     const container = document.getElementById('recoms-container');
-    container.innerHTML = '<div class="loading-text">Analyse géographique en cours...</div>';
+    container.innerHTML = `<div class="loading-text">Analyse géographique en cours...</div>`;
     document.getElementById('recoms-panel').classList.add('visible');
 
     // Requête sur les sommets, points de vue et lacs dans un rayon de 12km
@@ -157,7 +157,7 @@ async function genererRecommendations(lat, lon) {
         container.innerHTML = '';
 
         if (!data.elements || data.elements.length === 0) {
-            container.innerHTML = '<div class="loading-text">Aucun point d'intérêt majeur identifié à proximité.</div>';
+            container.innerHTML = `<div class="loading-text">Aucun point d'intérêt majeur identifié à proximité.</div>`;
             return;
         }
 
@@ -165,7 +165,6 @@ async function genererRecommendations(lat, lon) {
             const name = el.tags.name || (el.tags.natural === "peak" ? "Sommet anonyme" : "Point de vue");
             const distance = determinerDistance(lat, lon, el.lat, el.lon);
             
-            // Définition de la difficulté et des métadonnées selon la distance linéaire
             let diffClass = "facile";
             let diffLabel = "Facile";
             let icon = "landscape";
@@ -180,7 +179,6 @@ async function genererRecommendations(lat, lon) {
                 icon = "terrain";
             }
 
-            // Création graphique du composant de la recommandation
             const card = document.createElement('div');
             card.className = 'recom-card';
             card.innerHTML = `
@@ -196,18 +194,15 @@ async function genererRecommendations(lat, lon) {
                 </div>
             `;
 
-            // Au clic, on pré-génère et trace automatiquement la rando complète vers ce POI
             card.addEventListener('click', async () => {
                 document.getElementById('recoms-panel').classList.remove('visible');
                 instructionText.innerText = `Création de l'itinéraire vers : ${name}...`;
                 instructions.classList.remove('hidden');
 
-                // Réinitialise les anciens tracés et marqueurs
                 waypoints = [cityCenter, [el.lon, el.lat]];
                 markers.forEach(m => m.remove());
                 markers = [];
 
-                // Pose des nouveaux marqueurs automatiques
                 markers.push(new maplibregl.Marker({ color: '#188038' }).setLngLat(cityCenter).addTo(map));
                 markers.push(new maplibregl.Marker({ color: '#d93025' }).setLngLat([el.lon, el.lat]).addTo(map));
 
@@ -220,7 +215,7 @@ async function genererRecommendations(lat, lon) {
         instructionText.innerHTML = "<b>Suggestions prêtes !</b> Choisis une rando dans la liste ou clique manuellement sur la carte.";
     } catch (error) {
         console.error("Erreur Overpass :", error);
-        container.innerHTML = '<div class="loading-text">Impossible de charger les suggestions.</div>';
+        container.innerHTML = `<div class="loading-text">Impossible de charger les suggestions.</div>`;
     }
 }
 
@@ -352,7 +347,6 @@ function afficherTracerSurCarte(geojson) {
         map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#0b57d0', 'line-width': 5 } });
     }
     
-    // Zoom automatique pour englober la randonnée calculée
     const coordinates = geojson.geometry.coordinates;
     const bounds = coordinates.reduce((bounds, coord) => bounds.extend(coord), new maplibregl.LngLatBounds(coordinates[0], coordinates[0]));
     map.fitBounds(bounds, { padding: 50, pitch: document.getElementById('toggle-3d').checked ? 65 : 0 });
@@ -472,7 +466,6 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     fab.classList.add('hidden');
     document.getElementById('btn-export').classList.add('hidden'); 
     
-    // Rouvre les recommandations d'origine si une ville est connue
     if (cityCenter) {
         document.getElementById('recoms-panel').classList.add('visible');
     }
