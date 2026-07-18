@@ -30,42 +30,50 @@
             </div>
 
             <div class="preferences-box">
-                <h3 class="prefs-title">Configurez votre profil de marche</h3>
+                <h3 class="prefs-title">Configuration de la marche</h3>
                 
                 <div class="pref-group">
-                    <span class="pref-label">Niveaux ciblés</span>
-                    <div class="chips-selector">
-                        <label class="choice-chip">
-                            <input type="checkbox" checked name="pref-diff" value="facile">
-                            <span>Facile</span>
-                        </label>
-                        <label class="choice-chip">
-                            <input type="checkbox" checked name="pref-diff" value="moyen">
-                            <span>Moyen</span>
-                        </label>
-                        <label class="choice-chip">
-                            <input type="checkbox" name="pref-diff" value="difficile">
-                            <span>Difficile</span>
-                        </label>
+                    <span class="pref-label">Mode de déplacement</span>
+                    <div class="md-segmented-control full-width">
+                        <input type="radio" name="route-mode" id="mode-direct" value="foot-walking">
+                        <label for="mode-direct"><span class="material-symbols-outlined">directions_walk</span> Direct</label>
+                        
+                        <input type="radio" name="route-mode" id="mode-rando" value="foot-hiking" checked>
+                        <label for="mode-rando"><span class="material-symbols-outlined">hiking</span> Rando</label>
                     </div>
                 </div>
 
                 <div class="pref-group">
-                    <label for="radius-select" class="pref-label">Rayon d'action max (autour de la ville)</label>
-                    <div class="select-wrapper">
-                        <select id="radius-select" class="md-select">
-                            <option value="5000">5 km (Balades courtes)</option>
-                            <option value="10000">10 km (Randonnée standard)</option>
-                            <option value="15000" selected>15 km (Recommandé montagne)</option>
-                            <option value="20000">20 km (Grande journée)</option>
-                            <option value="35000">35 km (Exploration totale)</option>
-                        </select>
+                    <span class="pref-label">Difficulté ciblée</span>
+                    <div class="md-segmented-control full-width">
+                        <input type="radio" name="pref-diff" id="diff-tous" value="tous" checked>
+                        <label for="diff-tous">Tous</label>
+
+                        <input type="radio" name="pref-diff" id="diff-facile" value="facile">
+                        <label for="diff-facile">Facile</label>
+                        
+                        <input type="radio" name="pref-diff" id="diff-moyen" value="moyen">
+                        <label for="diff-moyen">Moyen</label>
+                        
+                        <input type="radio" name="pref-diff" id="diff-difficile" value="difficile">
+                        <label for="diff-difficile">Difficile</label>
                     </div>
+                </div>
+
+                <div class="pref-group">
+                    <label for="radius-select" class="pref-label">Rayon d'action max</label>
+                    <select id="radius-select" class="md-select">
+                        <option value="5000">5 km (Balades courtes)</option>
+                        <option value="10000">10 km (Randonnée standard)</option>
+                        <option value="15000" selected>15 km (Recommandé montagne)</option>
+                        <option value="20000">20 km (Grande journée)</option>
+                        <option value="35000">35 km (Exploration totale)</option>
+                    </select>
                 </div>
             </div>
 
-            <button id="btn-skip-landing" class="md-button md-button-secondary full-width">
-                Ouvrir la carte globale
+            <button id="btn-skip-landing" class="md-button md-button-primary full-width">
+                Découvrir la carte
             </button>
         </div>
     </div>
@@ -74,31 +82,31 @@
 
     <div id="instructions" class="md-snackbar hidden">
         <span class="material-symbols-outlined">touch_app</span>
-        <span id="instruction-text">Sélectionnez une destination ou cliquez sur la carte pour commencer.</span>
+        <span id="instruction-text">Sélectionnez une destination ou cliquez sur la carte.</span>
     </div>
 
     <div id="top-controls">
-        <div class="md-segmented-control">
-            <input type="radio" name="route-mode" id="mode-direct" value="foot-walking">
-            <label for="mode-direct"><span class="material-symbols-outlined">directions_walk</span> Direct</label>
-            
-            <input type="radio" name="route-mode" id="mode-rando" value="foot-hiking" checked>
-            <label for="mode-rando"><span class="material-symbols-outlined">hiking</span> Rando</label>
-        </div>
+        <button id="btn-open-setup" class="icon-button setup-trigger" title="Modifier les préférences">
+            <span class="material-symbols-outlined">settings</span>
+        </button>
 
         <div class="md-switch-card">
             <div class="switch-row">
                 <span>Traces OSM</span>
                 <label class="md-switch">
                     <input type="checkbox" id="toggle-hiking-layer" checked>
-                    <span class="md-slider"></span>
+                    <div class="md-switch-track">
+                        <div class="md-switch-thumb"></div>
+                    </div>
                 </label>
             </div>
             <div class="switch-row">
                 <span>Relief 3D</span>
                 <label class="md-switch">
                     <input type="checkbox" id="toggle-3d" checked>
-                    <span class="md-slider"></span>
+                    <div class="md-switch-track">
+                        <div class="md-switch-thumb"></div>
+                    </div>
                 </label>
             </div>
         </div>
@@ -108,12 +116,11 @@
         <div class="sidebar-header">
             <div class="header-title-group">
                 <span class="material-symbols-outlined header-icon">auto_awesome</span>
-                <h2 class="md-title">Destinations suggérées</h2>
+                <h2 class="md-title">Suggestions</h2>
             </div>
             <button id="btn-close-recoms" class="icon-button"><span class="material-symbols-outlined">close</span></button>
         </div>
-        <div class="sidebar-content" id="recoms-container">
-            </div>
+        <div class="sidebar-content" id="recoms-container"></div>
     </aside>
 
     <aside id="sidebar" class="hidden">
@@ -151,28 +158,24 @@
                     <div class="md-tile">
                         <span class="material-symbols-outlined tile-icon" style="color: #2b6cb0;">water_drop</span>
                         <div class="tile-val"><span id="stat-water">--</span> L</div>
-                        <span class="tile-label">Eau requise</span>
+                        <span class="tile-label">Eau</span>
                     </div>
                     <div class="md-tile">
                         <span class="material-symbols-outlined tile-icon" style="color: #dd6b20;">thermostat</span>
                         <div class="tile-val"><span id="stat-temp">--</span>°C</div>
-                        <span class="tile-label">Météo dép.</span>
+                        <span class="tile-label">Météo</span>
                     </div>
                 </div>
             </div>
 
             <div class="inner-card">
                 <h3 class="card-subtitle"><span class="material-symbols-outlined">layers</span> Texture du terrain</h3>
-                <div id="surfaces-container" class="card-body">
-                    <div class="loading-text">En attente de calcul...</div>
-                </div>
+                <div id="surfaces-container" class="card-body"></div>
             </div>
 
             <div class="inner-card">
                 <h3 class="card-subtitle"><span class="material-symbols-outlined">signpost</span> Sentiers empruntés</h3>
-                <div id="trail-names" class="trail-list card-body">
-                    <div class="loading-text">En attente de calcul...</div>
-                </div>
+                <div id="trail-names" class="trail-list card-body"></div>
             </div>
         </div>
 
