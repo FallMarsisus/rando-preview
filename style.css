@@ -421,3 +421,27 @@ input:checked + .md-slider:before {
     border-color: var(--md-sys-color-primary);
     box-shadow: 0 0 0 1px var(--md-sys-color-primary);
 }
+
+/* --- POSITIONNEMENT DU FAB DES RECOMMENDATIONS --- */
+#btn-reopen-recoms {
+    position: absolute;
+    bottom: 92px; /* Placé juste au-dessus du premier FAB (24px + 56px + 12px) */
+    left: 24px;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+}
+#btn-reopen-recoms:hover {
+    background-color: #c2e7ff;
+}
+
+@media (max-width: 768px) {
+    /* Sur mobile, on le centre horizontalement au-dessus de l'autre */
+    #btn-reopen-recoms {
+        bottom: 92px;
+        left: 50%;
+        transform: translateX(-50%) scale(1);
+    }
+    #btn-reopen-recoms.hidden {
+        transform: translateX(-50%) scale(0);
+    }
+}

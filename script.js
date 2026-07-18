@@ -2,7 +2,7 @@ let waypoints = [];
 let markers = [];
 let currentProfile = 'foot-hiking'; 
 let currentGeoJSON = null; 
-let cityCenter = null; // Coordonnées de référence de la dernière recherche
+let cityCenter = null; 
 
 // --- INITIALISATION DE LA CARTE ---
 const map = new maplibregl.Map({
@@ -107,7 +107,6 @@ searchInput.addEventListener('input', (e) => {
                             duration: 2500
                         });
 
-                        // Charge l'analyse avec le rayon sélectionné par défaut (15000m)
                         const rayonInitial = document.getElementById('radius-select').value;
                         genererRecommendations(lat, lon, rayonInitial);
                     });
@@ -122,14 +121,12 @@ searchInput.addEventListener('input', (e) => {
     }, 500);
 });
 
-// Écouteur pour mettre à jour les résultats si l'utilisateur change le rayon de recherche
 document.getElementById('radius-select').addEventListener('change', (e) => {
     if (cityCenter) {
         genererRecommendations(cityCenter[1], cityCenter[0], e.target.value);
     }
 });
 
-// Calcul de distance à vol d'oiseau (Formule de Haversine)
 function determinerDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; 
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -141,14 +138,15 @@ function determinerDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-// Récupère les points d'intérêts (Sommets, points de vue et Lacs via géométrie complète)
+// Récupère les points d'intérêts nommés et crée le panneau
 async function genererRecommendations(lat, lon, radius) {
     instructionText.innerText = "Recherche des plus beaux points d'intérêt aux alentours...";
     const container = document.getElementById('recoms-container');
     container.innerHTML = `<div class="loading-text">Analyse géographique en cours...</div>`;
+    
     document.getElementById('recoms-panel').classList.add('visible');
+    fabRecoms.classList.add('hidden'); // Cache le FAB s'il était ouvert
 
-    // Changement critique : utilisation de 'nwr' (Node-Way-Relation) et 'out center' pour capturer la géométrie des lacs
     const query = `
         [out:json][timeout:25];
         (
@@ -157,7 +155,7 @@ async function genererRecommendations(lat, lon, radius) {
           nwr["natural"="water"](around:${radius}, ${lat}, ${lon});
           nwr["water"](around:${radius}, ${lat}, ${lon});
         );
-        out center body 15;
+        out center body 30;
     `;
 
     try {
@@ -173,31 +171,23 @@ async function genererRecommendations(lat, lon, radius) {
         let cartesAffichees = 0;
 
         data.elements.forEach(el => {
-            // Lecture adaptative des coordonnées selon que l'élément OSM soit un point (node) ou une surface (way/relation)
+            if (!el.tags || !el.tags.name || el.tags.name.trim() === "") return;
+
             const elLon = el.lon || (el.center ? el.center.lon : null);
             const elLat = el.lat || (el.center ? el.center.lat : null);
-            
             if (!elLon || !elLat) return;
 
             const altitude = el.tags.ele ? parseInt(el.tags.ele, 10) : null;
-
-            // Filtre de sécurité haute montagne
             if (altitude && altitude > 3000) return; 
 
-            // Détermination du type d'entité pour adapter l'affichage
             const estUnLac = el.tags.natural === "water" || el.tags.water;
-            
-            let baseName = el.tags.name;
-            if (!baseName) {
-                baseName = estUnLac ? "Lac sans nom" : (el.tags.natural === "peak" ? "Sommet anonyme" : "Point de vue");
-            }
-
+            const baseName = el.tags.name;
             const name = altitude ? `${baseName} (${altitude} m)` : baseName;
             const distance = determinerDistance(lat, lon, elLat, elLon);
             
             let diffClass = "facile";
             let diffLabel = "Facile";
-            let icon = estUnLac ? "water" : "landscape"; // Attribution de l'icône de lac ou montagne
+            let icon = estUnLac ? "water" : "landscape"; 
 
             if (!estUnLac) {
                 if (distance >= 4 && distance < 8) {
@@ -210,7 +200,6 @@ async function genererRecommendations(lat, lon, radius) {
                     icon = "terrain";
                 }
             } else {
-                // Pour les lacs, la difficulté dépend de l'éloignement d'accès
                 diffClass = distance < 5 ? "facile" : "moyen";
                 diffLabel = distance < 5 ? "Rando Lac Facile" : "Rando Lac";
             }
@@ -230,24 +219,20 @@ async function genererRecommendations(lat, lon, radius) {
                 </div>
             `;
 
-            // ACTION AU CLIC : On définit l'Arrivée, et on laisse l'utilisateur choisir son Départ précis
             card.addEventListener('click', () => {
                 document.getElementById('recoms-panel').classList.remove('visible');
+                fabRecoms.classList.add('hidden');
                 
-                // Nettoyage de l'ancienne arrivée
                 if (markers[1]) { markers[1].remove(); markers[1] = null; }
                 waypoints[1] = [elLon, elLat];
                 
-                // Pose du marqueur rouge de destination
                 markers[1] = new maplibregl.Marker({ color: '#d93025' }).setLngLat(waypoints[1]).addTo(map);
 
                 if (waypoints[0]) {
-                    // Si l'utilisateur avait déjà placé un point de départ personnalisé
                     instructionText.innerText = "Calcul du parcours en cours...";
                     calculerItineraire(waypoints[0], waypoints[1]);
                 } else {
-                    // Si aucun départ n'est configuré, on l'invite à cliquer n'importe où
-                    instructionText.innerHTML = `Destination fixée : <b>${baseName}</b>.<br>Cliquez maintenant sur la carte pour définir votre <b>Départ exact</b> (parking, sentier...).`;
+                    instructionText.innerHTML = `Destination fixée : <b>${baseName}</b>.<br>Cliquez maintenant sur la carte pour définir votre <b>Départ exact</b>.`;
                     instructions.classList.remove('hidden');
                 }
             });
@@ -257,7 +242,7 @@ async function genererRecommendations(lat, lon, radius) {
         });
 
         if (cartesAffichees === 0) {
-            container.innerHTML = `<div class="loading-text">Aucun itinéraire pédestre sécurisé trouvé dans ce périmètre.</div>`;
+            container.innerHTML = `<div class="loading-text">Aucun lieu nommé et accessible à pied trouvé dans ce périmètre.</div>`;
         } else {
             instructionText.innerHTML = "<b>Suggestions prêtes !</b> Sélectionnez une destination, puis fixez votre point de départ.";
         }
@@ -271,6 +256,7 @@ async function genererRecommendations(lat, lon, radius) {
 // --- GESTION DE L'INTERFACE UI ---
 const sidebar = document.getElementById('sidebar');
 const fab = document.getElementById('btn-reopen');
+const fabRecoms = document.getElementById('btn-reopen-recoms'); // NOUVEAU
 const instructions = document.getElementById('instructions');
 const instructionText = document.getElementById('instruction-text');
 
@@ -279,13 +265,23 @@ document.getElementById('btn-close-sidebar').addEventListener('click', () => {
     if (waypoints[0] && waypoints[1]) fab.classList.remove('hidden');
 });
 
+// MODIFIÉ : Gestion de fermeture du panneau de recommandations
 document.getElementById('btn-close-recoms').addEventListener('click', () => {
     document.getElementById('recoms-panel').classList.remove('visible');
+    if (cityCenter && waypoints.length < 2) {
+        fabRecoms.classList.remove('hidden'); // Affiche la boussole uniquement si une recherche a eu lieu et qu'aucun trajet n'est en cours
+    }
 });
 
 fab.addEventListener('click', () => {
     sidebar.classList.remove('hidden');
     fab.classList.add('hidden');
+});
+
+// NOUVEAU : Clic sur le FAB de réouverture des suggestions
+fabRecoms.addEventListener('click', () => {
+    document.getElementById('recoms-panel').classList.add('visible');
+    fabRecoms.classList.add('hidden');
 });
 
 document.querySelectorAll('input[name="route-mode"]').forEach(radio => {
@@ -314,26 +310,24 @@ document.getElementById('toggle-3d').addEventListener('change', (e) => {
 });
 
 
-// --- CLICS CARTE (LOGIQUE DYNAMIQUE DE TRACÉ SÉCURISÉ) ---
+// --- CLICS CARTE ---
 map.on('click', async (e) => {
     if (!landingPage.classList.contains('hidden')) return; 
     
     const coords = [e.lngLat.lng, e.lngLat.lat];
 
     if (!waypoints[0] && !waypoints[1]) {
-        // Mode manuel 1 : Placement du départ
         waypoints[0] = coords;
         markers[0] = new maplibregl.Marker({ color: '#188038' }).setLngLat(coords).addTo(map);
         instructionText.innerHTML = "Départ enregistré. Cliquez pour définir l'<b>Arrivée</b>.";
     } else if (waypoints[0] && !waypoints[1]) {
-        // Mode manuel 2 : Placement de l'arrivée
         waypoints[1] = coords;
         markers[1] = new maplibregl.Marker({ color: '#d93025' }).setLngLat(coords).addTo(map);
         document.getElementById('recoms-panel').classList.remove('visible');
+        fabRecoms.classList.add('hidden');
         instructionText.innerText = "Analyse topologique...";
         await calculerItineraire(waypoints[0], waypoints[1]);
     } else if (!waypoints[0] && waypoints[1]) {
-        // Mode Recommandation : L'arrivée était déjà fixée par le panneau, on récupère le départ exact du clic
         waypoints[0] = coords;
         markers[0] = new maplibregl.Marker({ color: '#188038' }).setLngLat(coords).addTo(map);
         instructionText.innerText = "Calcul de l'itinéraire optimal...";
@@ -345,7 +339,6 @@ map.on('click', async (e) => {
 // --- LOGIQUE API (VIA PROXY CLOUDFLARE) ---
 async function calculerItineraire(start, end) {
     const WORKER_URL = 'https://rando.simonlncln.workers.dev';
-
     const urlRando = `${WORKER_URL}/${currentProfile}`;
     const urlMeteo = `https://api.open-meteo.com/v1/forecast?latitude=${start[1]}&longitude=${start[0]}&current_weather=true`;
 
@@ -387,6 +380,7 @@ async function calculerItineraire(start, end) {
         sidebar.classList.remove('hidden');
         document.getElementById('btn-export').classList.remove('hidden'); 
         fab.classList.add('hidden');
+        fabRecoms.classList.add('hidden'); // Fermeture de sécurité globale
 
     } catch (error) {
         console.error("Crash complet :", error);
@@ -524,6 +518,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     
     if (cityCenter) {
         document.getElementById('recoms-panel').classList.add('visible');
+        fabRecoms.classList.add('hidden');
     }
     
     instructions.classList.remove('hidden');
