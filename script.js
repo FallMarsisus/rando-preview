@@ -21,31 +21,33 @@ const map = new maplibregl.Map({
                 tileSize: 256, 
                 attribution: '| Randos &copy; Waymarked Trails' 
             },
+            // Source Mondiale Open Data AWS (Mapzen Terrarium) - Gratuite et sans clé API
             'terrainSource': { 
                 type: 'raster-dem', 
                 tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
-                encoding: 'terrarium', 
+                encoding: 'terrarium', // Indique à MapLibre comment interpréter le relief
                 tileSize: 256,
-                maxzoom: 14 
+                maxzoom: 14
             }
         },
         layers: [
             { id: 'osm-layer', type: 'raster', source: 'osm' },
+            // Le hillshade ajoute des ombres de relief réalistes
             { 
                 id: 'hillshade-layer', 
                 type: 'hillshade', 
                 source: 'terrainSource', 
                 paint: { 
                     'hillshade-shadow-color': '#221e15', 
-                    'hillshade-exaggeration': 0.2
+                    'hillshade-exaggeration': 0.8 
                 } 
             },
             { id: 'hiking-layer', type: 'raster', source: 'hiking-trails', minzoom: 12, paint: { 'raster-opacity': 0.4 }, layout: { 'visibility': 'visible' } }
         ]
     },
-    center: [2.2137, 46.2276], 
+    center: [2.2137, 46.2276], // Centre de la France au démarrage
     zoom: 5.5, 
-    pitch: 0,
+    pitch: 0, // À plat initialement (vue globale)
     bearing: 0
 });
 
@@ -71,10 +73,11 @@ document.getElementById('btn-skip-landing').addEventListener('click', () => {
 // Autocomplétion Nominatim (OpenStreetMap gratuit)
 searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
-    const query = e.target.value;
+    const query = e.target.value.trim();
     
     if (query.length < 3) { 
         searchResults.classList.add('hidden'); 
+        searchResults.innerHTML = ''; 
         return; 
     }
 
@@ -92,25 +95,120 @@ searchInput.addEventListener('input', (e) => {
                     li.addEventListener('click', () => {
                         landingPage.classList.add('hidden');
                         instructions.classList.remove('hidden');
+                        searchResults.classList.add('hidden');
+                        searchInput.value = '';
                         
-                        // Si le bouton 3D est coché, on incline fortement la caméra pour voir les montagnes en vrai relief
+                        const lat = parseFloat(place.lat);
+                        const lon = parseFloat(place.lon);
                         const is3DActive = document.getElementById('toggle-3d').checked;
+
+                        // Vol fluide vers la ville cherchée
                         map.flyTo({
-                            center: [parseFloat(place.lon), parseFloat(place.lat)],
+                            center: [lon, lat],
                             zoom: 13,
                             pitch: is3DActive ? 65 : 0,
                             bearing: is3DActive ? 20 : 0,
                             duration: 2500
                         });
+
+                        // Lancement de la recherche Overpass pour récupérer les randos locales
+                        chercherRandosAutour(lat, lon);
                     });
                     searchResults.appendChild(li);
                 });
+            } else {
+                searchResults.classList.add('hidden');
             }
         } catch (error) {
             console.error("Erreur de recherche", error);
         }
     }, 500);
 });
+
+// Récupération des randonnées existantes via l'API Overpass d'OpenStreetMap (Rayon de 5km)
+async function chercherRandosAutour(lat, lon) {
+    instructionText.innerText = "Recherche des itinéraires de randonnée à proximité...";
+    
+    const query = `
+        [out:json][timeout:25];
+        relation["route"="hiking"](around:5000, ${lat}, ${lon});
+        out geom;
+    `;
+
+    try {
+        const res = await fetch("https://overpass-api.de/api/interpreter", {
+            method: "POST",
+            body: query
+        });
+        const data = await res.json();
+
+        const features = [];
+        data.elements.forEach(el => {
+            if (el.type === "relation" && el.members) {
+                const coordinates = [];
+                el.members.forEach(m => {
+                    if (m.type === "way" && m.geometry) {
+                        coordinates.push(m.geometry.map(g => [g.lon, g.lat]));
+                    }
+                });
+                if (coordinates.length > 0) {
+                    features.push({
+                        type: "Feature",
+                        properties: { name: el.tags?.name || "Randonnée sans nom" },
+                        geometry: { type: "MultiLineString", coordinates: coordinates }
+                    });
+                }
+            }
+        });
+
+        if (features.length > 0) {
+            const geojson = { type: "FeatureCollection", features: features };
+
+            if (map.getSource('local-hikes')) {
+                map.getSource('local-hikes').setData(geojson);
+            } else {
+                map.addSource('local-hikes', { type: 'geojson', data: geojson });
+                
+                // Tracé blanc de lueur d'arrière-plan
+                map.addLayer({ 
+                    id: 'local-hikes-glow', 
+                    type: 'line', 
+                    source: 'local-hikes', 
+                    layout: { 'line-join': 'round', 'line-cap': 'round' }, 
+                    paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.6 } 
+                });
+
+                // Ligne pointillée rouge distinctive M3
+                map.addLayer({ 
+                    id: 'local-hikes-line', 
+                    type: 'line', 
+                    source: 'local-hikes', 
+                    layout: { 'line-join': 'round', 'line-cap': 'round' }, 
+                    paint: { 'line-color': '#d93025', 'line-width': 3, 'line-dasharray': [2, 2] } 
+                });
+
+                // Interaction : Affiche le nom de la randonnée locale trouvée sur OSM au clic
+                map.on('click', 'local-hikes-line', (e) => {
+                    if (waypoints.length === 0) {
+                        const randoName = e.features[0].properties.name;
+                        instructionText.innerHTML = `Idée d'itinéraire : <b>${randoName}</b>. Place tes repères pour la tracer !`;
+                    }
+                });
+                
+                map.on('mouseenter', 'local-hikes-line', () => map.getCanvas().style.cursor = 'pointer');
+                map.on('mouseleave', 'local-hikes-line', () => map.getCanvas().style.cursor = '');
+            }
+            
+            instructionText.innerHTML = `<b>${features.length} randos</b> trouvées autour de la ville ! Clique pour tracer : <b>Départ</b> puis <b>Arrivée</b>.`;
+        } else {
+            instructionText.innerHTML = `Aucune rando officielle trouvée à proximité. Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.`;
+        }
+    } catch (error) {
+        console.error("Erreur Overpass API :", error);
+        instructionText.innerHTML = `Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.`;
+    }
+}
+
 
 // --- GESTION DE L'INTERFACE UI ---
 const sidebar = document.getElementById('sidebar');
@@ -143,17 +241,13 @@ document.getElementById('toggle-hiking-layer').addEventListener('change', (e) =>
     map.setLayoutProperty('hiking-layer', 'visibility', e.target.checked ? 'visible' : 'none');
 });
 
-// MODIFIÉ: Gestion dynamique du VRAI Relief 3D de l'altitude
+// Interrupteur Relief 3D (Vraies altitudes mondiales)
 document.getElementById('toggle-3d').addEventListener('change', (e) => {
     if (e.target.checked) {
-        // Réactive le moteur de rendu 3D du terrain
         map.setTerrain({ source: 'terrainSource', exaggeration: 1.5 });
-        // Incline la vue pour profiter de la perspective sur le relief
         map.easeTo({ pitch: 65, bearing: 20, duration: 1200 });
     } else {
-        // Désactive complètement le calcul du relief (aplanit la carte à l'altitude 0)
         map.setTerrain(null);
-        // Remet la caméra droite (vue du dessus)
         map.easeTo({ pitch: 0, bearing: 0, duration: 1200 });
     }
 });
@@ -161,8 +255,7 @@ document.getElementById('toggle-3d').addEventListener('change', (e) => {
 
 // --- CLICS CARTE ---
 map.on('click', async (e) => {
-    // Si la landing page est encore visible on bloque les clics map
-    if (!landingPage.classList.contains('hidden')) return;
+    if (!landingPage.classList.contains('hidden')) return; // Bloque si l'accueil est actif
     if (waypoints.length >= 2) return;
 
     const coords = [e.lngLat.lng, e.lngLat.lat];
@@ -177,6 +270,7 @@ map.on('click', async (e) => {
         await calculerItineraire(waypoints[0], waypoints[1]);
     }
 });
+
 
 // --- LOGIQUE API (VIA PROXY CLOUDFLARE) ---
 async function calculerItineraire(start, end) {
@@ -211,14 +305,14 @@ async function calculerItineraire(start, end) {
         }
 
         const dataRando = await resRando.json();
+        
         if (dataRando.error) {
             instructionText.innerText = `Erreur : ${dataRando.error.message || "Erreur de routage"}`;
             return;
         }
 
-        // Succès !
         const routeGeoJSON = dataRando.features[0];
-        currentGeoJSON = routeGeoJSON; // On garde en mémoire pour l'export GPX
+        currentGeoJSON = routeGeoJSON; // Mise en mémoire pour le bouton de téléchargement GPX
         
         afficherTracerSurCarte(routeGeoJSON);
         calculerEtAfficherStats(routeGeoJSON, temperature);
@@ -226,7 +320,7 @@ async function calculerItineraire(start, end) {
 
         instructions.classList.add('hidden');
         sidebar.classList.remove('hidden');
-        document.getElementById('btn-export').classList.remove('hidden'); // On active l'export
+        document.getElementById('btn-export').classList.remove('hidden'); // Rendre le bouton d'export visible
         fab.classList.add('hidden');
 
     } catch (error) {
@@ -246,7 +340,8 @@ function afficherTracerSurCarte(geojson) {
     }
 }
 
-// --- MATHS ---
+
+// --- MATHS STATS ---
 function calculerEtAfficherStats(geojson, temperature) {
     const coords = geojson.geometry.coordinates;
     let dPlus = 0, dMinus = 0;
@@ -275,12 +370,14 @@ function calculerEtAfficherStats(geojson, temperature) {
     document.getElementById('stat-temp').innerText = temperature;
 }
 
+
 // --- EXTRACTION ET GESTION DYNAMIQUE DES CARTES ---
 function extraireNomsEtSurfaces(geojson) {
     const props = geojson.properties;
     
     const containerNoms = document.getElementById('trail-names');
     const cardNoms = containerNoms.closest('.inner-card');
+    
     const containerSurfaces = document.getElementById('surfaces-container');
     const cardSurfaces = containerSurfaces.closest('.inner-card');
 
@@ -328,7 +425,8 @@ function extraireNomsEtSurfaces(geojson) {
     }
 }
 
-// --- EXPORT GPX (Full JS) ---
+
+// --- EXPORT GPX (Full JS sans Backend) ---
 document.getElementById('btn-export').addEventListener('click', () => {
     if (!currentGeoJSON) return;
 
@@ -348,7 +446,6 @@ document.getElementById('btn-export').addEventListener('click', () => {
   </trk>
 </gpx>`;
 
-    // Création d'un Blob et téléchargement simulé
     const blob = new Blob([gpx], { type: 'application/gpx+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -360,17 +457,20 @@ document.getElementById('btn-export').addEventListener('click', () => {
     window.URL.revokeObjectURL(url);
 });
 
+
 // --- RÉINITIALISATION ---
 document.getElementById('btn-reset').addEventListener('click', () => {
     waypoints = [];
     currentGeoJSON = null;
     markers.forEach(m => m.remove());
     markers = [];
+    
     if (map.getSource('route')) map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
+    if (map.getSource('local-hikes')) map.getSource('local-hikes').setData({ type: 'FeatureCollection', features: [] });
     
     sidebar.classList.add('hidden');
     fab.classList.add('hidden');
-    document.getElementById('btn-export').classList.add('hidden'); // Cache le bouton export
+    document.getElementById('btn-export').classList.add('hidden'); 
     instructions.classList.remove('hidden');
     instructionText.innerHTML = "Clique sur la carte : <b>Départ</b> puis <b>Arrivée</b>.";
 });

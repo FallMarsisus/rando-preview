@@ -97,8 +97,13 @@ body, html {
     position: absolute; top: 100%; left: 0; right: 0; 
     background: var(--md-sys-color-surface-card);
     border-radius: 16px; box-shadow: var(--md-elevation-2); margin-top: 8px;
-    padding: 8px 0; list-style: none; max-height: 220px; overflow-y: auto; z-index: 101;
+    padding: 0; /* <-- Modifié ici */
+    list-style: none; max-height: 220px; overflow-y: auto; z-index: 101;
     border: 1px solid var(--md-sys-color-outline-variant);
+}
+/* <-- Ajoute ce bloc : Le padding ne s'applique que s'il y a des résultats */
+#search-results:not(:empty) {
+    padding: 8px 0; 
 }
 #search-results li { 
     padding: 14px 18px; cursor: pointer; font-size: 14px; 
