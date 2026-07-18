@@ -70,10 +70,21 @@
             <h2 class="md-title">Randos suggérées</h2>
             <button id="btn-close-recoms" class="icon-button"><span class="material-symbols-outlined">close</span></button>
         </div>
+        
+        <div class="panel-options">
+            <label for="radius-select">Rayon de recherche maximum</label>
+            <select id="radius-select" class="md-select">
+                <option value="5000">5 km (Courte distance)</option>
+                <option value="10000">10 km</option>
+                <option value="15000" selected>15 km (Par défaut)</option>
+                <option value="20000">20 km</option>
+                <option value="35000">35 km (Haute montagne)</option>
+            </select>
+        </div>
+
         <div class="sidebar-content" id="recoms-container">
             </div>
     </aside>
-
     <aside id="sidebar" class="hidden">
         <div class="sidebar-header">
             <h2 class="md-title">Détails de l'itinéraire</h2>
